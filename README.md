@@ -21,10 +21,11 @@ npm run preview  # Build lokal testen
 
 ## Stack
 
-- [Vite](https://vite.dev) + React 18 + TypeScript
+- [Vite](https://vite.dev) + React 18 + TypeScript · [React Router](https://reactrouter.com)
 - [Tailwind CSS 4](https://tailwindcss.com)
 - [shadcn/ui](https://ui.shadcn.com)-Komponentenbasis (`src/app/components/ui`)
 - [Lucide](https://lucide.dev) Icons · [sonner](https://sonner.emilkowal.ski) Toasts
+- [Supabase](https://supabase.com) (PostgreSQL, EU-Region) als Backend — Einrichtung: [docs/supabase-setup.md](docs/supabase-setup.md). Ohne konfigurierte Umgebungsvariablen läuft die App mit Demo-Daten.
 
 ## Struktur
 
