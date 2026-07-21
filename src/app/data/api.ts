@@ -71,6 +71,60 @@ export async function fetchModuleTrainings(moduleSlug: string): Promise<Training
   }));
 }
 
+// ─── Lernansicht ──────────────────────────────────────────────────────────────
+
+export type LearningElement = { id: string; type: string; payload: any };
+export type LearningChapter = { id: string; title: string; elements: LearningElement[] };
+export type LearningTraining = {
+  fromDb: boolean;
+  id: string;
+  title: string;
+  chapters: LearningChapter[];
+};
+
+/** Übersetzungen als Map: "<ref_type>:<ref_id>:<field>" → { text, status } */
+export type TranslationMap = Record<string, { text: string | null; status: string }>;
+
+export async function fetchLearningTraining(slug: string): Promise<LearningTraining | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("training")
+    .select("id, title, chapter(id, title, sort, content_element(id, type, sort, payload))")
+    .eq("slug", slug)
+    .eq("status", "published")
+    .single();
+  if (error || !data) return null;
+  const chapters = ((data as any).chapter ?? [])
+    .sort((a: any, b: any) => a.sort - b.sort)
+    .map((c: any) => ({
+      id: c.id,
+      title: c.title,
+      elements: (c.content_element ?? [])
+        .sort((a: any, b: any) => a.sort - b.sort)
+        .map((e: any) => ({ id: e.id, type: e.type, payload: e.payload ?? {} })),
+    }));
+  if (!chapters.length) return null;
+  return { fromDb: true, id: (data as any).id, title: (data as any).title, chapters };
+}
+
+export async function fetchTranslationMap(
+  refIds: string[],
+  language: string,
+): Promise<TranslationMap | null> {
+  if (!supabase || !refIds.length) return null;
+  const { data, error } = await supabase
+    .from("translation")
+    .select("ref_type, ref_id, field, text, status")
+    .eq("language_code", language)
+    .in("ref_id", refIds);
+  if (error || !data) return null;
+  const map: TranslationMap = {};
+  for (const t of data as any[]) {
+    map[`${t.ref_type}:${t.ref_id}:${t.field}`] = { text: t.text, status: t.status };
+  }
+  return map;
+}
+
 export async function fetchDashboardLists(): Promise<{
   mine: DashboardTraining[];
   fresh: FreshTraining[];

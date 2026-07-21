@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { Link } from "react-router";
 import { AlertCircle, Eye } from "lucide-react";
 import logo from "../../imports/GroupIT_Logo.png";
 
@@ -94,6 +95,11 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
           </div>
         </div>
         <p className="text-center text-[12px] text-white/40 mt-6">© 2026 GroupIT – After Sales IT · Porsche Konstruktionen GmbH &amp; Co KG</p>
+        <p className="text-center text-[12px] mt-2">
+          <Link to="/impressum" className="text-white/50 hover:text-white/80 hover:underline transition-colors">Impressum</Link>
+          <span className="text-white/30 mx-2">·</span>
+          <Link to="/datenschutz" className="text-white/50 hover:text-white/80 hover:underline transition-colors">Datenschutz</Link>
+        </p>
       </div>
     </div>
   );

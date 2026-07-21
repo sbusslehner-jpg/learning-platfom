@@ -14,6 +14,7 @@ import { Dashboard } from "./pages/DashboardPage";
 import { EditorContent } from "./pages/EditorContentPage";
 import { EditorTree } from "./pages/EditorTreePage";
 import { LearningView } from "./pages/LearningPage";
+import { Datenschutz, Impressum } from "./pages/LegalPage";
 import { LoginScreen } from "./pages/LoginPage";
 import { TrainingOverview } from "./pages/TrainingOverviewPage";
 import { TranslationsOverview } from "./pages/TranslationsOverviewPage";
@@ -56,6 +57,8 @@ export default function App() {
     <>
       <Routes>
         <Route path={SCREEN_PATHS["login"]} element={<LoginScreen onLogin={() => { setLoggedIn(true); navigate("/"); }} />} />
+        <Route path="/impressum" element={<Impressum />} />
+        <Route path="/datenschutz" element={<Datenschutz />} />
         <Route path="*" element={<Navigate to={SCREEN_PATHS["login"]} replace />} />
       </Routes>
       <Toaster position="bottom-right" />
@@ -105,6 +108,8 @@ export default function App() {
             <Route path={SCREEN_PATHS["admin-users"]} element={<AdminUsers />} />
             <Route path={SCREEN_PATHS["admin-markets"]} element={<AdminMarkets />} />
             <Route path={SCREEN_PATHS["admin-settings"]} element={<AdminSettings />} />
+            <Route path="/impressum" element={<Impressum />} />
+            <Route path="/datenschutz" element={<Datenschutz />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

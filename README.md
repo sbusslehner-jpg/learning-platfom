@@ -38,6 +38,13 @@ src/imports/                Assets aus Figma (GroupIT-Logo u. a.)
 src/guidelines/             Design-Guidelines aus Figma Make
 ```
 
+## Go-Live-Checkliste
+
+- **Eigene Domain:** Netlify → Domain management → Add a domain → DNS-Eintrag (CNAME auf die Netlify-Subdomain) setzen; HTTPS-Zertifikat stellt Netlify automatisch aus.
+- **Übersetzungs-Worker deployen:** siehe [docs/uebersetzung-worker.md](docs/uebersetzung-worker.md) (Mistral-Key als Supabase-Secret).
+- **Impressum & Datenschutz:** Die Platzhalter unter `/impressum` und `/datenschutz` durch juristisch geprüfte Texte ersetzen.
+- **Noch offen für den Produktivbetrieb:** echte Anmeldung (Supabase Auth) mit Markt-/Rollen-Sichtbarkeit, Redaktions-Schreibpfad, serverseitiger Lernfortschritt, Monitoring.
+
 ## Dokumentation
 
 - [Konzept](docs/konzept.md) – Zielbild, Rollen, Datenmodell, Roadmap
