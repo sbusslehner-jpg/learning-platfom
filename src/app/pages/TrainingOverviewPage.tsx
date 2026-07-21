@@ -3,18 +3,21 @@ import { Breadcrumb } from "../components/Breadcrumb";
 import { ProgressRing } from "../components/ProgressRing";
 import { StatusBadge } from "../components/StatusBadge";
 import type { Screen } from "../data/demo";
+import { fetchModuleTrainings, useSupabaseData } from "../data/api";
 
 // ─── Training Overview ────────────────────────────────────────────────────────
 
+const FALLBACK_TRAININGS = [
+  { title: "DSR – Konfiguration im Einzelhandel", duration: "51 Min.", progress: 62, isNew: false },
+  { title: "DSR – Rollenzuweisung und Berechtigungen", duration: "32 Min.", progress: 100, isNew: false },
+  { title: "DSR – DealerData-Synchronisation", duration: "28 Min.", progress: 0, isNew: true },
+  { title: "DSR – Fehlerbehandlung & Logs", duration: "24 Min.", progress: 0, isNew: false },
+  { title: "DSR – Mobilgeräteverwaltung", duration: "19 Min.", progress: 0, isNew: true },
+  { title: "DSR – API-Integration & Webhooks", duration: "38 Min.", progress: 0, isNew: false },
+];
+
 export function TrainingOverview({ onNavigate }: { onNavigate: (s: Screen) => void }) {
-  const trainings = [
-    { title: "DSR – Konfiguration im Einzelhandel", duration: "51 Min.", progress: 62, isNew: false },
-    { title: "DSR – Rollenzuweisung und Berechtigungen", duration: "32 Min.", progress: 100, isNew: false },
-    { title: "DSR – DealerData-Synchronisation", duration: "28 Min.", progress: 0, isNew: true },
-    { title: "DSR – Fehlerbehandlung & Logs", duration: "24 Min.", progress: 0, isNew: false },
-    { title: "DSR – Mobilgeräteverwaltung", duration: "19 Min.", progress: 0, isNew: true },
-    { title: "DSR – API-Integration & Webhooks", duration: "38 Min.", progress: 0, isNew: false },
-  ];
+  const trainings = useSupabaseData(() => fetchModuleTrainings("dsr"), FALLBACK_TRAININGS);
   return (
     <div className="flex-1 overflow-y-auto p-6 lg:p-8">
       <Breadcrumb items={["ServiceQ", "Katalog", "Digital Service Reception"]} />

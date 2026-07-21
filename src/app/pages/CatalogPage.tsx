@@ -2,16 +2,19 @@ import { BookMarked } from "lucide-react";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { ProgressBar } from "../components/ProgressBar";
 import type { Screen } from "../data/demo";
+import { fetchCatalogModules, useSupabaseData } from "../data/api";
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────
 
+const FALLBACK_MODULES = [
+  { name: "Digital Service Reception", code: "DSR", count: 6, done: 3 },
+  { name: "Remote Prognose & Diagnose", code: "RPD", count: 4, done: 0 },
+  { name: "Connected Car Diagnostics", code: "CCD", count: 5, done: 0 },
+  { name: "Onboarding & Systemüberblick", code: "OB", count: 3, done: 3 },
+];
+
 export function Catalog({ onNavigate }: { onNavigate: (s: Screen) => void }) {
-  const modules = [
-    { name: "Digital Service Reception", code: "DSR", count: 6, done: 3 },
-    { name: "Remote Prognose & Diagnose", code: "RPD", count: 4, done: 0 },
-    { name: "Connected Car Diagnostics", code: "CCD", count: 5, done: 0 },
-    { name: "Onboarding & Systemüberblick", code: "OB", count: 3, done: 3 },
-  ];
+  const modules = useSupabaseData(fetchCatalogModules, FALLBACK_MODULES);
   return (
     <div className="flex-1 overflow-y-auto p-6 lg:p-8">
       <Breadcrumb items={["ServiceQ", "Katalog"]} />
@@ -35,7 +38,7 @@ export function Catalog({ onNavigate }: { onNavigate: (s: Screen) => void }) {
               <span>{m.count} Trainings</span>
               <span>{m.done}/{m.count} abgeschlossen</span>
             </div>
-            <ProgressBar percent={Math.round((m.done / m.count) * 100)} />
+            <ProgressBar percent={m.count ? Math.round((m.done / m.count) * 100) : 0} />
           </button>
         ))}
       </div>

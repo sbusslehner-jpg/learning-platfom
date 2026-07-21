@@ -1,10 +1,25 @@
 import { ArrowRight, Clock } from "lucide-react";
 import { ProgressRing } from "../components/ProgressRing";
 import type { Screen } from "../data/demo";
+import { fetchDashboardLists, useSupabaseData } from "../data/api";
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+const FALLBACK_LISTS = {
+  fresh: [
+    { title: "CCD – Grundkonfiguration", module: "CCD", duration: "18 Min.", isNew: true },
+    { title: "RPD – Remote Service Setup", module: "RPD", duration: "11 Min.", isNew: true },
+  ],
+  mine: [
+    { title: "DSR – Konfiguration im Einzelhandel", module: "DSR", progress: 62, status: "begonnen" },
+    { title: "DSR – Rollenzuweisung und Berechtigungen", module: "DSR", progress: 100, status: "abgeschlossen" },
+    { title: "ServiceQ – Systemüberblick", module: "Onboarding", progress: 100, status: "abgeschlossen" },
+    { title: "DSR – Fehlerbehandlung & Logs", module: "DSR", progress: 0, status: "offen" },
+  ],
+};
+
 export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
+  const { fresh, mine } = useSupabaseData(fetchDashboardLists, FALLBACK_LISTS);
   return (
     <div className="flex-1 overflow-y-auto p-6 lg:p-8">
       <h1 className="text-[28px] font-semibold text-[#232830] mb-1">Guten Morgen, Max!</h1>
@@ -38,10 +53,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         <div className="xl:col-span-1">
           <h2 className="text-[17px] font-semibold text-[#232830] mb-4">Neu für dich</h2>
           <div className="space-y-3">
-            {[
-              { title: "CCD – Grundkonfiguration", module: "CCD", duration: "18 Min.", isNew: true },
-              { title: "RPD – Remote Service Setup", module: "RPD", duration: "11 Min.", isNew: true },
-            ].map(t => (
+            {fresh.map(t => (
               <button key={t.title} onClick={() => onNavigate("learning")}
                 className="w-full text-left bg-white rounded-lg border border-[#C3C9D1] p-4 hover:border-[#00C8C1] hover:shadow-sm transition-all group">
                 <div className="flex items-start justify-between gap-3">
@@ -67,12 +79,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
             <button onClick={() => onNavigate("catalog")} className="text-[13px] text-[#007D78] hover:underline">Alle anzeigen</button>
           </div>
           <div className="space-y-3">
-            {[
-              { title: "DSR – Konfiguration im Einzelhandel", module: "DSR", progress: 62, status: "begonnen" },
-              { title: "DSR – Rollenzuweisung und Berechtigungen", module: "DSR", progress: 100, status: "abgeschlossen" },
-              { title: "ServiceQ – Systemüberblick", module: "Onboarding", progress: 100, status: "abgeschlossen" },
-              { title: "DSR – Fehlerbehandlung & Logs", module: "DSR", progress: 0, status: "offen" },
-            ].map(t => (
+            {mine.map(t => (
               <button key={t.title} onClick={() => onNavigate("learning")}
                 className="w-full text-left bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 hover:border-[#00C8C1] hover:shadow-sm transition-all group flex items-center gap-4">
                 <div className="relative shrink-0">
