@@ -64,6 +64,7 @@ create table if not exists launch_ticket (
   id                uuid primary key default gen_random_uuid(),
   code_hash         text not null unique,               -- SHA-256 des Codes (nie Klartext, B/§10.3)
   client_id         text not null references sso_client(client_id),
+  app_user_id       uuid references app_user(id) on delete cascade,
   issuer            text not null,
   tenant            text not null,
   subject           text not null,

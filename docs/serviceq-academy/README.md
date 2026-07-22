@@ -10,6 +10,7 @@ Anbindung von ServiceQ an die GITacademy per Token-Handshake.
 | [`Anbindung-ServiceQ-an-die-GITacademy.pdf`](Anbindung-ServiceQ-an-die-GITacademy.pdf) | Zusammenfassende technische Dokumentation (PDF) |
 | [`01-architektur-challenge.md`](01-architektur-challenge.md) | 15 Befunde mit Priorität · Problem · Auswirkung · Verbesserung |
 | [`02-zielkonzept-und-plan.md`](02-zielkonzept-und-plan.md) | Stack-adaptiertes Zielkonzept + Implementierungsplan + offene Risiken |
+| [`03-deploy-edge-functions.md`](03-deploy-edge-functions.md) | **Option A:** Prototyp ohne eigenen Server auf Supabase Edge Functions deployen + Smoke-Test |
 
 ## Referenzimplementierung im Repository
 

@@ -125,7 +125,8 @@ Deno.serve(async (req: Request) => {
   const expiresAt = new Date(Date.now() + LAUNCH_TICKET_TTL_SECONDS * 1000).toISOString();
 
   const { error: insErr } = await sb.from("launch_ticket").insert({
-    code_hash: codeHash, client_id: clientId, issuer: body.issuer, tenant: body.tenant, subject: body.subject,
+    code_hash: codeHash, client_id: clientId, app_user_id: user.id,
+    issuer: body.issuer, tenant: body.tenant, subject: body.subject,
     external_user_key: externalKey, market: body.market ?? null, locale,
     roles: [academyRole], target_type: t.type, target_id: t.id,
     idempotency_key: idempotencyKey, correlation_id: correlationId, expires_at: expiresAt,
