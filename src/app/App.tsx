@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router"
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Toaster } from "sonner";
 import { MobileBottomNav } from "./components/MobileBottomNav";
+import { SessionTimeout } from "./components/SessionTimeout";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import type { NavHandler, Screen } from "./data/demo";
@@ -16,6 +17,7 @@ import { EditorTree } from "./pages/EditorTreePage";
 import { LearningView } from "./pages/LearningPage";
 import { Datenschutz, Impressum } from "./pages/LegalPage";
 import { LoginScreen } from "./pages/LoginPage";
+import { SessionExpiredPage, SsoErrorPage } from "./pages/SsoPages";
 import { TrainingOverview } from "./pages/TrainingOverviewPage";
 import { TranslationsOverview } from "./pages/TranslationsOverviewPage";
 import { TranslationReview } from "./pages/TranslationsReviewPage";
@@ -71,6 +73,8 @@ export default function App() {
         <Route path={SCREEN_PATHS["login"]} element={<LoginScreen onLogin={() => { setLoggedIn(true); navigate("/"); }} />} />
         <Route path="/impressum" element={<Impressum />} />
         <Route path="/datenschutz" element={<Datenschutz />} />
+        <Route path="/sso/expired" element={<SessionExpiredPage />} />
+        <Route path="/sso/error" element={<SsoErrorPage />} />
         <Route path="*" element={<Navigate to={SCREEN_PATHS["login"]} replace />} />
       </Routes>
       <Toaster position="bottom-right" />
@@ -124,12 +128,15 @@ export default function App() {
             <Route path={SCREEN_PATHS["admin-settings"]} element={<AdminSettings />} />
             <Route path="/impressum" element={<Impressum />} />
             <Route path="/datenschutz" element={<Datenschutz />} />
+            <Route path="/sso/expired" element={<SessionExpiredPage />} />
+            <Route path="/sso/error" element={<SsoErrorPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
 
       <MobileBottomNav current={screen} onNavigate={onNavigate} />
+      <SessionTimeout />
     </div>
   );
 }
