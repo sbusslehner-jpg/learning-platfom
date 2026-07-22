@@ -81,18 +81,30 @@ Demo-Betrieb unberührt bleibt:
    startet sie ohne Login, bei fehlender Session leitet sie auf `/sso/expired` (nie auf eine
    Loginseite). Ohne diese Variable bleibt alles beim Demo-Login — kein Bruch des laufenden Betriebs.
 
-## 5. Ehrliche Einschränkungen des Prototyps
+## 5. Systemauthentifizierung: client_secret oder private_key_jwt
 
-- **Systemauth = client_secret** (Demo). Produktiv `private_key_jwt` — der JWT-Pfad im
-  Launch-Ticket-Handler ist bewusst *fail-closed* und muss vor Produktivbetrieb ergänzt werden (B4).
-- **Deep-Link ins Training:** Der Consume-Redirect zeigt logisch auf `/lernen/<id>`; die SPA lädt
-  in der Lernansicht aktuell ein festes Training. Echtes Deep-Linking je Trainings-ID ist ein
-  kleiner Folgeschritt (SPA-Route `/lernen/:slug` an die Ladefunktion koppeln).
+Beide Verfahren sind implementiert; der Client wählt per `sso_client.auth_method`:
+
+- **`client_secret`** (Demo-Default): schnellster Start; der Bearer ist das Klartext-Secret,
+  serverseitig gegen `client_secret_hash` geprüft.
+- **`private_key_jwt`** (empfohlen, RFC 9700): ServiceQ signiert ein kurzlebiges Client-Assertion-JWT
+  mit seinem privaten Schlüssel; die GITacademy prüft **Signatur** (jose, RS256/ES256) gegen
+  `sso_client.public_key_pem`, die **Claims** (`iss`/`sub`=client_id, `aud`=Endpoint, `exp`/`nbf`/`iat`,
+  Toleranz) und sperrt **`jti`-Replays** über `sso_used_assertion`. Aktivieren: bei der Client-Registrierung
+  `auth_method='private_key_jwt'` setzen und `public_key_pem` hinterlegen; optional `ACADEMY_LAUNCH_AUD`
+  als erwartete Audience setzen (bei Proxy-Betrieb).
+
+> Die reine **Claim-Logik** ist unit-getestet (Node); die **Signaturprüfung** (jose) läuft nur in der
+> deployten Edge Function und wurde hier nicht ausgeführt.
+
+## 6. Ehrliche Einschränkungen des Prototyps
+
 - **P0-Blocker bleibt:** `0002_demo_write_access.sql` muss vor echtem Betrieb zurückgenommen werden,
   sonst umgeht der anon-Key jede Session (B2).
-- **Nicht ausgeführt hier:** Der Ein-Domain-Proxy und der SSO-Modus wurden gebaut und build-geprüft,
-  aber nicht gegen eine echte Supabase-/Netlify-Umgebung durchlaufen. Erst der Smoke-Test plus ein
-  Browser-Durchlauf auf der zusammengeführten Domain verifizieren das End-to-End-Verhalten.
+- **Nicht ausgeführt hier:** Ein-Domain-Proxy, SSO-Modus, JWT-Signaturprüfung und DB-Atomarität wurden
+  gebaut und build-/typ-geprüft, aber nicht gegen eine echte Supabase-/Netlify-Umgebung durchlaufen.
+  Erst der Smoke-Test plus ein Browser-Durchlauf auf der zusammengeführten Domain verifizieren das
+  End-to-End-Verhalten.
 
 ## 5. Was damit bewiesen ist
 

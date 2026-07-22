@@ -201,6 +201,45 @@ export function extendSession(
   return { ok: true, idleExpiresAt, warningAt: idleExpiresAt - t.warningMinutes * 60_000 };
 }
 
+// ─── Client-Assertion-Claims (private_key_jwt, B4 / RFC 9700) ────────────────
+// Reine Claim-Prüfung (iss/sub/aud/exp/nbf/iat/jti) mit Uhrzeit-Toleranz.
+// Die kryptografische Signaturprüfung erfolgt in der Edge Function (jose);
+// hier ist der DB-/Runtime-unabhängige, unit-testbare Teil.
+
+export type ClientAssertionClaims = {
+  iss?: string; sub?: string; aud?: string | string[];
+  exp?: number; nbf?: number; iat?: number; jti?: string;
+};
+
+export function validateClientAssertionClaims(
+  claims: ClientAssertionClaims,
+  opts: { clientId: string; audience: string; nowSeconds: number; maxLifetimeSeconds?: number; skewSeconds?: number },
+): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const skew = opts.skewSeconds ?? 60;
+  const maxLifetime = opts.maxLifetimeSeconds ?? 300;
+  const now = opts.nowSeconds;
+
+  if (claims.iss !== opts.clientId) errors.push("iss");
+  if (claims.sub !== opts.clientId) errors.push("sub");
+
+  const auds = Array.isArray(claims.aud) ? claims.aud : claims.aud ? [claims.aud] : [];
+  if (!auds.includes(opts.audience)) errors.push("aud");
+
+  if (typeof claims.exp !== "number" || claims.exp <= now - skew) errors.push("exp");
+  if (typeof claims.nbf === "number" && claims.nbf > now + skew) errors.push("nbf");
+
+  if (typeof claims.iat !== "number") errors.push("iat");
+  else {
+    if (claims.iat > now + skew) errors.push("iat_future");
+    if (now - claims.iat > maxLifetime) errors.push("iat_too_old");
+  }
+
+  if (!claims.jti) errors.push("jti");
+
+  return { ok: errors.length === 0, errors };
+}
+
 // ─── Fehlerklassifikation (§9.1) ─────────────────────────────────────────────
 
 export const ERROR_CATALOG = {

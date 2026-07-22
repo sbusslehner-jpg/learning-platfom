@@ -17,7 +17,7 @@ import {
   deriveExternalUserKey, generateOpaqueToken, sha256Hex, pseudonymize,
   validateLaunchRequest, mapRole, resolveTarget, targetToPath, resolveLocale,
   computeSessionExpiry, extendSession, errorForTicketClassification,
-  DEFAULT_TIMEOUTS, type ClientConfig,
+  validateClientAssertionClaims, DEFAULT_TIMEOUTS, type ClientConfig,
 } from "./sso.ts";
 
 const CFG: ClientConfig = {
@@ -195,6 +195,46 @@ test("extendSession: Idle darf Absolut nicht überschreiten", () => {
   const r = extendSession(now, { absoluteExpiresAt: abs }, DEFAULT_TIMEOUTS);
   assert.equal(r.ok, true);
   if (r.ok) assert.equal(r.idleExpiresAt, abs); // auf Absolut gekappt
+});
+
+// ─── Client-Assertion-Claims (private_key_jwt) ───────────────────────────────
+
+const NOW = 1_700_000_000;
+const goodClaims = { iss: "serviceq-prod", sub: "serviceq-prod", aud: "https://academy.example.com/launch", exp: NOW + 120, nbf: NOW - 5, iat: NOW - 5, jti: "j-1" };
+const opts = { clientId: "serviceq-prod", audience: "https://academy.example.com/launch", nowSeconds: NOW };
+
+test("validateClientAssertionClaims: gültige Assertion", () => {
+  assert.deepEqual(validateClientAssertionClaims(goodClaims, opts), { ok: true, errors: [] });
+});
+
+test("validateClientAssertionClaims: falscher issuer/subject", () => {
+  const r = validateClientAssertionClaims({ ...goodClaims, iss: "evil", sub: "evil" }, opts);
+  assert.ok(r.errors.includes("iss") && r.errors.includes("sub"));
+});
+
+test("validateClientAssertionClaims: falsche audience abgewiesen", () => {
+  const r = validateClientAssertionClaims({ ...goodClaims, aud: "https://anderer.example" }, opts);
+  assert.ok(r.errors.includes("aud"));
+});
+
+test("validateClientAssertionClaims: abgelaufen", () => {
+  const r = validateClientAssertionClaims({ ...goodClaims, exp: NOW - 3600 }, opts);
+  assert.ok(r.errors.includes("exp"));
+});
+
+test("validateClientAssertionClaims: zu alt / in der Zukunft ausgestellt", () => {
+  assert.ok(validateClientAssertionClaims({ ...goodClaims, iat: NOW - 5000 }, opts).errors.includes("iat_too_old"));
+  assert.ok(validateClientAssertionClaims({ ...goodClaims, iat: NOW + 5000 }, opts).errors.includes("iat_future"));
+});
+
+test("validateClientAssertionClaims: fehlendes jti (Replay-Schutz)", () => {
+  const r = validateClientAssertionClaims({ ...goodClaims, jti: undefined }, opts);
+  assert.ok(r.errors.includes("jti"));
+});
+
+test("validateClientAssertionClaims: aud als Array wird akzeptiert", () => {
+  const r = validateClientAssertionClaims({ ...goodClaims, aud: ["x", "https://academy.example.com/launch"] }, opts);
+  assert.equal(r.ok, true);
 });
 
 // ─── Ticket-Fehlerklassifikation ─────────────────────────────────────────────

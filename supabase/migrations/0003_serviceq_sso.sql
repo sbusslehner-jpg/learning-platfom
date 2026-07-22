@@ -110,6 +110,17 @@ create table if not exists academy_session (
 
 create index if not exists academy_session_user on academy_session (app_user_id);
 
+-- ---------- Replay-Sperre für Client-Assertion-JWTs (private_key_jwt, B4) ----------
+-- Jedes verbrauchte jti wird gespeichert; ein zweiter Aufruf mit demselben jti
+-- verletzt den Primary Key → Replay abgewiesen.
+create table if not exists sso_used_assertion (
+  jti         text primary key,
+  client_id   text not null,
+  expires_at  timestamptz not null,
+  used_at     timestamptz not null default now()
+);
+create index if not exists sso_used_assertion_exp on sso_used_assertion (expires_at);
+
 -- ---------- Audit (pseudonymisiert, ohne Tokens/PII, §12) ----------
 create table if not exists sso_audit (
   id                uuid primary key default gen_random_uuid(),
@@ -185,11 +196,12 @@ $$;
 -- RLS aktiv + KEINE Policy für anon/authenticated = vollständige Sperre.
 -- (service_role umgeht RLS und wird ausschließlich in Edge Functions genutzt.)
 -- ============================================================
-alter table sso_client      enable row level security;
-alter table sso_role_map    enable row level security;
-alter table launch_ticket   enable row level security;
-alter table academy_session enable row level security;
-alter table sso_audit       enable row level security;
+alter table sso_client         enable row level security;
+alter table sso_role_map       enable row level security;
+alter table launch_ticket      enable row level security;
+alter table academy_session    enable row level security;
+alter table sso_audit          enable row level security;
+alter table sso_used_assertion enable row level security;
 
 -- Bewusst keine anon/authenticated-Policies: der Browser darf diese
 -- Tabellen niemals sehen oder schreiben.

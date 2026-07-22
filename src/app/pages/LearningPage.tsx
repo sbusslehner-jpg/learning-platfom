@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useParams } from "react-router";
 import {
   ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, Download, Eye,
   ExternalLink, Globe, Play,
@@ -8,9 +9,13 @@ import { ProgressBar } from "../components/ProgressBar";
 import { ProgressRing } from "../components/ProgressRing";
 import { type Screen } from "../data/demo";
 import {
-  fetchLearningTraining, fetchTranslationMap, useSupabaseData,
+  fetchLearningTraining, fetchTranslationMap,
   type LearningChapter, type LearningElement, type LearningTraining, type TranslationMap,
 } from "../data/api";
+
+// Deep-Link-Ziel: der Consume-Redirect landet auf /lernen/<slug>; ohne Slug
+// wird das Standard-Training geladen ("Weiterlernen"-Einstieg).
+const DEFAULT_SLUG = "dsr-konfiguration-einzelhandel";
 
 // ─── Fallback: Demo-Training (aktiv, solange Supabase nicht verbunden ist) ────
 
@@ -260,10 +265,20 @@ function saveProgress(trainingId: string, done: Set<string>) {
 }
 
 export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }) {
-  const training = useSupabaseData(
-    () => fetchLearningTraining("dsr-konfiguration-einzelhandel"),
-    FALLBACK_TRAINING,
-  );
+  const { slug } = useParams();
+  const activeSlug = slug ?? DEFAULT_SLUG;
+  const [training, setTraining] = useState<LearningTraining>(FALLBACK_TRAINING);
+
+  // Training zum Slug laden (bei Slug-Wechsel neu); Fallback bleibt bis Daten da sind.
+  useEffect(() => {
+    let alive = true;
+    setTraining(FALLBACK_TRAINING);
+    fetchLearningTraining(activeSlug)
+      .then((t) => { if (alive && t) setTraining(t); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [activeSlug]);
+
   const chapters: LearningChapter[] = training.chapters;
 
   const [activeIdx, setActiveIdx] = useState(0);

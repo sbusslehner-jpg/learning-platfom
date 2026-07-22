@@ -137,6 +137,7 @@ export default function App() {
             <Route path={SCREEN_PATHS["catalog"]} element={<Catalog onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["training-overview"]} element={<TrainingOverview onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["learning"]} element={<LearningView onNavigate={onNavigate} />} />
+            <Route path={SCREEN_PATHS["learning"] + "/:slug"} element={<LearningView onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["editor-tree"]} element={<EditorTree onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["editor-content"]} element={<EditorContent onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["editor-content"] + "/:trainingId"} element={<EditorContent onNavigate={onNavigate} />} />

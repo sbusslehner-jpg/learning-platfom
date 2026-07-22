@@ -9,11 +9,44 @@
 // ============================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { decodeProtectedHeader, importSPKI, jwtVerify } from "npm:jose@5";
 import {
   validateLaunchRequest, mapRole, resolveTarget, resolveLocale,
   deriveExternalUserKey, generateOpaqueToken, sha256Hex, pseudonymize,
+  validateClientAssertionClaims,
   LAUNCH_TICKET_TTL_SECONDS, SECURITY_HEADERS, type ClientConfig, type LaunchRequest,
 } from "../_shared/sso.ts";
+
+/**
+ * Verifiziert ein Client-Assertion-JWT (private_key_jwt, RFC 9700):
+ * Signatur gegen den hinterlegten Public Key, Claims (iss/sub/aud/exp/nbf/iat/jti)
+ * und jti-Replay-Sperre. Gibt true nur bei vollständig gültiger Assertion zurück.
+ */
+async function verifyClientAssertion(sb: any, assertion: string, client: any, audience: string): Promise<boolean> {
+  try {
+    if (!client.public_key_pem) return false;
+    const header = decodeProtectedHeader(assertion);
+    const alg = header.alg;
+    if (!alg || !["RS256", "ES256"].includes(alg)) return false;
+
+    const key = await importSPKI(client.public_key_pem, alg);
+    const { payload } = await jwtVerify(assertion, key, { algorithms: [alg] });
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const check = validateClientAssertionClaims(payload as any, { clientId: client.client_id, audience, nowSeconds });
+    if (!check.ok) return false;
+
+    // jti-Replay-Sperre: Insert schlägt bei Wiederverwendung fehl (PK-Verletzung).
+    const { error: jtiErr } = await sb.from("sso_used_assertion").insert({
+      jti: payload.jti, client_id: client.client_id,
+      expires_at: new Date((payload.exp as number) * 1000).toISOString(),
+    });
+    if (jtiErr) return false; // bereits verwendet → Replay
+    return true;
+  } catch {
+    return false; // ungültige Signatur / Struktur → fail-closed
+  }
+}
 
 const SUPPORTED_LOCALES = ["de", "en", "fr", "pl", "it", "es", "nl", "cs", "pt", "el", "hu", "sv"];
 
@@ -55,10 +88,9 @@ Deno.serve(async (req: Request) => {
   if (client.auth_method === "client_secret" && client.client_secret_hash) {
     clientOk = (await sha256Hex(bearer)) === client.client_secret_hash;
   } else if (client.auth_method === "private_key_jwt") {
-    // TODO(B4): Client-Assertion-JWT gegen client.public_key_pem verifizieren
-    //   (Signatur, iss, sub=client_id, aud=diese URL, exp/nbf/iat, jti-Replay-Sperre).
-    //   Bis dahin bewusst FAIL-CLOSED:
-    clientOk = false;
+    // Erwartete Audience: dieser Endpunkt (per Env überschreibbar für Proxy-Setups).
+    const audience = Deno.env.get("ACADEMY_LAUNCH_AUD") ?? new URL(req.url).origin + new URL(req.url).pathname;
+    clientOk = await verifyClientAssertion(sb, bearer, client, audience);
   }
   if (!clientOk) {
     await audit(sb, { event_type: "SSO_SYSTEM_LOGIN", result: "DENIED", client_id: clientId, correlation_id: correlationId });
