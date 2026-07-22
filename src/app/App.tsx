@@ -6,6 +6,7 @@ import { MobileBottomNav } from "./components/MobileBottomNav";
 import { SessionTimeout } from "./components/SessionTimeout";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
+import { SSO_MODE, useAcademyAuth } from "./data/academyAuth";
 import type { NavHandler, Screen } from "./data/demo";
 import { AdminMarkets } from "./pages/AdminMarketsPage";
 import { AdminSettings } from "./pages/AdminSettingsPage";
@@ -56,26 +57,45 @@ function screenFromPath(pathname: string): Screen {
 
 // ─── App Shell + Main ─────────────────────────────────────────────────────────
 
+function SsoLoading() {
+  return (
+    <div className="min-h-screen bg-[#F6F8FA] flex items-center justify-center">
+      <span className="inline-block w-8 h-8 border-2 border-[#C3C9D1] border-t-[#00C8C1] rounded-full animate-spin" role="status" aria-label="Sitzung wird geprüft" />
+    </div>
+  );
+}
+
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const ssoState = useAcademyAuth();
 
   const screen: Screen = screenFromPath(location.pathname);
   const onNavigate: NavHandler = (s, param) =>
     navigate(param ? `${SCREEN_PATHS[s]}/${param}` : SCREEN_PATHS[s]);
 
-  if (!loggedIn) return (
+  // Im SSO-Modus entscheidet die echte Session; im Demo-Modus der Login-Boolean.
+  const authed = SSO_MODE ? ssoState === "authenticated" : loggedIn;
+
+  if (!authed) return (
     <>
       <Routes>
-        <Route path={SCREEN_PATHS["login"]} element={<LoginScreen onLogin={() => { setLoggedIn(true); navigate("/"); }} />} />
+        {/* Demo-Anmeldung nur im Demo-Modus; im SSO-Modus gibt es keine Loginseite. */}
+        {!SSO_MODE && (
+          <Route path={SCREEN_PATHS["login"]} element={<LoginScreen onLogin={() => { setLoggedIn(true); navigate("/"); }} />} />
+        )}
         <Route path="/impressum" element={<Impressum />} />
         <Route path="/datenschutz" element={<Datenschutz />} />
         <Route path="/sso/expired" element={<SessionExpiredPage />} />
         <Route path="/sso/error" element={<SsoErrorPage />} />
-        <Route path="*" element={<Navigate to={SCREEN_PATHS["login"]} replace />} />
+        <Route path="*" element={
+          SSO_MODE
+            ? (ssoState === "loading" ? <SsoLoading /> : <Navigate to="/sso/expired" replace />)
+            : <Navigate to={SCREEN_PATHS["login"]} replace />
+        } />
       </Routes>
       <Toaster position="bottom-right" />
     </>

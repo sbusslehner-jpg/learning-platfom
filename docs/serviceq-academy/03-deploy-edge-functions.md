@@ -55,21 +55,44 @@ Status → verlängern → Logout → Status 401**. Bei Erfolg meldet er `bestan
 > Das ist der Moment, in dem aus „geschrieben" echtes „getestet" wird — die 23 Unit-Tests decken
 > die Logik ab, dieser Lauf deckt DB-Atomarität, Cookie und Redirect ab.
 
-## 4. Ehrliche Einschränkungen des Prototyps
+## 4. Ein-Domain-Integration (SPA akzeptiert die echte SSO-Session)
+
+Der Backend-Handshake (Abschnitt 3) läuft eigenständig. Damit auch die **SPA** die Session nutzt,
+sind zwei Dinge nötig — beide bereits im Repo vorbereitet und **standardmäßig aus**, damit der
+Demo-Betrieb unberührt bleibt:
+
+1. **Ein-Domain-Proxy (Cookie same-site).** Das `__Host-ga_session`-Cookie wird auf der Domain
+   gesetzt, die der Browser aufruft. Liegen SPA (Netlify) und Functions (`*.supabase.co`) auf
+   verschiedenen Domains, erhält die SPA das Cookie nicht. Lösung: die Consume-/Session-Endpunkte
+   unter derselben Netlify-Domain proxyen. In [`netlify.toml`](../../netlify.toml) ist dafür ein
+   klar markierter, auskommentierter Block hinterlegt — `<PROJECT_REF>` ersetzen und einkommentieren:
+
+   ```
+   /sso/consume       → https://<PROJECT_REF>.functions.supabase.co/academy-consume   (200, force)
+   /sso/session/*     → https://<PROJECT_REF>.functions.supabase.co/academy-session/* (200, force)
+   ```
+
+   ServiceQ setzt die `launchUrl` dann auf `https://<netlify-site>/sso/consume?code=…`, und
+   `ACADEMY_SPA_URL` (Consume-Redirect-Ziel) ist die Netlify-Site. Alles läuft same-domain.
+
+2. **SPA liest die Session statt des Demo-Logins.** Ist die Netlify-Env-Variable
+   `VITE_ACADEMY_SESSION_URL=/sso/session` gesetzt, schaltet die SPA in den **SSO-Modus**
+   (`src/app/data/academyAuth.ts`): Beim Start prüft sie `/(…)/status`; bei gültiger Session
+   startet sie ohne Login, bei fehlender Session leitet sie auf `/sso/expired` (nie auf eine
+   Loginseite). Ohne diese Variable bleibt alles beim Demo-Login — kein Bruch des laufenden Betriebs.
+
+## 5. Ehrliche Einschränkungen des Prototyps
 
 - **Systemauth = client_secret** (Demo). Produktiv `private_key_jwt` — der JWT-Pfad im
   Launch-Ticket-Handler ist bewusst *fail-closed* und muss vor Produktivbetrieb ergänzt werden (B4).
-- **Cross-Domain-Cookie:** Das `__Host-ga_session`-Cookie wird auf der **Functions-Domain**
-  (`*.functions.supabase.co`) gesetzt. Die SPA läuft auf einer **anderen** Domain (Netlify) und
-  bekommt dieses Cookie deshalb **nicht** automatisch. Für den curl-Smoke-Test ist das egal (alle
-  Aufrufe gehen an die Functions-Domain). Für die **echte SPA-Integration** müssen SPA und Functions
-  unter **einer** Domain liegen (z. B. `academy.example.com/*` → SPA, `academy.example.com/sso/*` →
-  Functions per Reverse-Proxy/Custom-Domain). Das ist der nächste Integrationsschritt.
-- **SPA-Anmeldung:** Die SPA nutzt aktuell noch die Demo-Anmeldung (`loggedIn`-Boolean). Damit die
-  SPA die SSO-Session **wirklich** akzeptiert, muss sie beim Start `academy-session/status` prüfen
-  statt des Booleans — ein bewusst separater Schritt, um den laufenden Demo-Betrieb nicht zu brechen.
+- **Deep-Link ins Training:** Der Consume-Redirect zeigt logisch auf `/lernen/<id>`; die SPA lädt
+  in der Lernansicht aktuell ein festes Training. Echtes Deep-Linking je Trainings-ID ist ein
+  kleiner Folgeschritt (SPA-Route `/lernen/:slug` an die Ladefunktion koppeln).
 - **P0-Blocker bleibt:** `0002_demo_write_access.sql` muss vor echtem Betrieb zurückgenommen werden,
   sonst umgeht der anon-Key jede Session (B2).
+- **Nicht ausgeführt hier:** Der Ein-Domain-Proxy und der SSO-Modus wurden gebaut und build-geprüft,
+  aber nicht gegen eine echte Supabase-/Netlify-Umgebung durchlaufen. Erst der Smoke-Test plus ein
+  Browser-Durchlauf auf der zusammengeführten Domain verifizieren das End-to-End-Verhalten.
 
 ## 5. Was damit bewiesen ist
 

@@ -2,7 +2,32 @@
   command = "npm run build"
   publish = "dist"
 
-# SPA-Fallback: alle Routen auf index.html umleiten
+# ─────────────────────────────────────────────────────────────────────────────
+# SSO Ein-Domain-Proxy (Option A / Integrationsschritt) — STANDARDMÄSSIG AUS.
+#
+# Damit das serverseitige Session-Cookie same-site ankommt, werden die
+# Consume-/Session-Endpunkte unter DERSELBEN Domain wie die SPA bereitgestellt
+# und per Proxy an die Supabase Edge Functions weitergereicht. Erst dadurch
+# bindet das __Host-Cookie an die Netlify-Domain (nicht an *.supabase.co).
+#
+# Aktivieren: <PROJECT_REF> ersetzen und die vier Zeilen einkommentieren.
+# Diese Redirects MÜSSEN vor dem SPA-Fallback stehen (Reihenfolge = Priorität).
+# Zusätzlich in den Netlify-Env-Variablen setzen: VITE_ACADEMY_SESSION_URL=/sso/session
+#
+# [[redirects]]
+#   from = "/sso/consume"
+#   to = "https://<PROJECT_REF>.functions.supabase.co/academy-consume"
+#   status = 200
+#   force = true
+#
+# [[redirects]]
+#   from = "/sso/session/*"
+#   to = "https://<PROJECT_REF>.functions.supabase.co/academy-session/:splat"
+#   status = 200
+#   force = true
+# ─────────────────────────────────────────────────────────────────────────────
+
+# SPA-Fallback: alle übrigen Routen auf index.html (muss ZULETZT stehen)
 [[redirects]]
   from = "/*"
   to = "/index.html"
