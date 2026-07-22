@@ -15,6 +15,9 @@ export type Screen =
 
 export type Status = "draft" | "published" | "outdated" | "missing" | "auto" | "corrected" | "error";
 
+/** Navigations-Handler mit optionalem Pfad-Parameter (z. B. Trainings-ID). */
+export type NavHandler = (s: Screen, param?: string) => void;
+
 // ─── Status config ─────────────────────────────────────────────────────────────
 
 export const STATUS: Record<Status, { label: string; icon: React.ReactNode; bg: string; color: string }> = {

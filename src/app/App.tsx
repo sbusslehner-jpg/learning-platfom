@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 import { MobileBottomNav } from "./components/MobileBottomNav";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
-import type { Screen } from "./data/demo";
+import type { NavHandler, Screen } from "./data/demo";
 import { AdminMarkets } from "./pages/AdminMarketsPage";
 import { AdminSettings } from "./pages/AdminSettingsPage";
 import { AdminUsers } from "./pages/AdminUsersPage";
@@ -37,9 +37,20 @@ export const SCREEN_PATHS: Record<Screen, string> = {
   "admin-settings":        "/verwaltung/einstellungen",
 };
 
-const PATH_TO_SCREEN: Record<string, Screen> = Object.fromEntries(
-  (Object.entries(SCREEN_PATHS) as [Screen, string][]).map(([screen, path]) => [path, screen]),
-);
+// Aktiven Screen aus dem Pfad ableiten (längster passender Präfix gewinnt,
+// damit parametrisierte Routen die Navigation korrekt hervorheben).
+function screenFromPath(pathname: string): Screen {
+  let best: Screen = "dashboard";
+  let bestLen = -1;
+  for (const [scr, path] of Object.entries(SCREEN_PATHS) as [Screen, string][]) {
+    if (path === "/") continue;
+    if ((pathname === path || pathname.startsWith(path + "/")) && path.length > bestLen) {
+      best = scr;
+      bestLen = path.length;
+    }
+  }
+  return best;
+}
 
 // ─── App Shell + Main ─────────────────────────────────────────────────────────
 
@@ -50,8 +61,9 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const screen: Screen = PATH_TO_SCREEN[location.pathname] ?? "dashboard";
-  const onNavigate = (s: Screen) => navigate(SCREEN_PATHS[s]);
+  const screen: Screen = screenFromPath(location.pathname);
+  const onNavigate: NavHandler = (s, param) =>
+    navigate(param ? `${SCREEN_PATHS[s]}/${param}` : SCREEN_PATHS[s]);
 
   if (!loggedIn) return (
     <>
@@ -103,8 +115,10 @@ export default function App() {
             <Route path={SCREEN_PATHS["learning"]} element={<LearningView onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["editor-tree"]} element={<EditorTree onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["editor-content"]} element={<EditorContent onNavigate={onNavigate} />} />
+            <Route path={SCREEN_PATHS["editor-content"] + "/:trainingId"} element={<EditorContent onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["translations-overview"]} element={<TranslationsOverview onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["translations-review"]} element={<TranslationReview onNavigate={onNavigate} />} />
+            <Route path={SCREEN_PATHS["translations-review"] + "/:trainingId/:lang"} element={<TranslationReview onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["admin-users"]} element={<AdminUsers />} />
             <Route path={SCREEN_PATHS["admin-markets"]} element={<AdminMarkets />} />
             <Route path={SCREEN_PATHS["admin-settings"]} element={<AdminSettings />} />

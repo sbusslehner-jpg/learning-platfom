@@ -14,6 +14,7 @@ Im Supabase-Dashboard unter **SQL Editor**:
 
 1. Inhalt von [`supabase/migrations/0001_init.sql`](../supabase/migrations/0001_init.sql) einfügen → **Run**
 2. Inhalt von [`supabase/seed.sql`](../supabase/seed.sql) einfügen → **Run**
+3. Für die Redaktion (Editor/Übersetzungen mit Schreibzugriff): [`supabase/migrations/0002_demo_write_access.sql`](../supabase/migrations/0002_demo_write_access.sql) einfügen → **Run**. ⚠️ Nur für die Demo — Details und Absicherung: [redaktion.md](redaktion.md).
 
 Danach existiert die komplette Struktur aus dem Konzept (§8): Märkte, Sprachen, Produkt → Modul → Training → Kapitel → Element, polymorphe Übersetzungstabelle, Fortschritt, Jobs — inklusive ServiceQ-Demo-Inhalten (DSR-Training mit Kapiteln, gemischte Übersetzungsstatus für FR/PL/IT).
 
