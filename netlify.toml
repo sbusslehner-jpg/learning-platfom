@@ -2,6 +2,36 @@
   command = "npm run build"
   publish = "dist"
 
+# Serverseitige Auth-Funktionen (netlify/functions/*.mjs).
+# esbuild bündelt die Abhängigkeiten (jose) und die gemeinsamen Module unter
+# netlify/functions/_lib/ in das Deployment-Paket.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth-API (auth/README.md). Gleiche Domain wie die SPA: kein CORS, und die
+# Keycloak-Client-Credentials bleiben serverseitig.
+# Diese Redirects MÜSSEN vor dem SPA-Fallback stehen (Reihenfolge = Priorität),
+# sonst liefert Netlify für /api/* die index.html aus.
+# ─────────────────────────────────────────────────────────────────────────────
+[[redirects]]
+  from = "/api/auth/exchange"
+  to = "/.netlify/functions/auth-exchange"
+  status = 200
+
+# Die spezifischere /resend-Route steht zuerst und zeigt auf dieselbe
+# Funktion; diese unterscheidet die Routen anhand des Originalpfads.
+[[redirects]]
+  from = "/api/admin/invite/resend"
+  to = "/.netlify/functions/admin-invite"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/invite"
+  to = "/.netlify/functions/admin-invite"
+  status = 200
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SSO Ein-Domain-Proxy (Option A / Integrationsschritt) — STANDARDMÄSSIG AUS.
 #

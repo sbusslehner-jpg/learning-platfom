@@ -3,13 +3,13 @@
   GroupIT / ServiceQ Lernplattform
   Einladungs-E-Mail (Keycloak "execute actions", Keycloak 26)
 
-  Verfuegbare Variablen: link, linkExpiration,
+  Verfügbare Variablen: link, linkExpiration,
   linkExpirationFormatter(linkExpiration), realmName, user (ProfileBean),
   requiredActions (Liste der angeforderten Aktionen, wird von
   UserResource.executeActionsEmail gesetzt).
 
   E-Mail-sicheres HTML: Tabellenlayout, jede Gestaltung inline.
-  Der <style>-Block enthaelt ausschliesslich progressive Zusaetze
+  Der <style>-Block enthält ausschließlich progressive Zusätze
   (Dark Mode, Umbruch auf kleinen Displays) - ohne ihn sieht die
   Nachricht identisch aus, nur ohne diese Extras.
   ============================================================
@@ -35,16 +35,19 @@
   </#list>
 </#if>
 <#if hasUpdatePassword>
+  <#assign sqEyebrow = msg("sqInviteEyebrow")>
   <#assign sqPreheader = msg("sqInvitePreheader")>
   <#assign sqHeadline = msg("sqInviteHeadline", realmName)>
   <#assign sqIntro = msg("sqInviteIntro", realmName)>
   <#assign sqButtonLabel = msg("sqInviteButton")>
 <#elseif hasVerifyEmail>
+  <#assign sqEyebrow = msg("sqProductLabel")>
   <#assign sqPreheader = msg("sqVerifyPreheader")>
   <#assign sqHeadline = msg("sqVerifyHeadline")>
   <#assign sqIntro = msg("sqVerifyIntro", realmName)>
   <#assign sqButtonLabel = msg("sqVerifyButton")>
 <#else>
+  <#assign sqEyebrow = msg("sqProductLabel")>
   <#assign sqPreheader = msg("sqUpdatePreheader")>
   <#assign sqHeadline = msg("sqUpdateHeadline")>
   <#assign sqIntro = msg("sqUpdateIntro", realmName)>
@@ -70,7 +73,7 @@
 <meta name="supported-color-schemes" content="light dark">
 <title>${sqHeadline}</title>
 <style type="text/css">
-  /* Nur progressive Zusaetze - das Layout selbst ist vollstaendig inline. */
+  /* Nur progressive Zusätze - das Layout selbst ist vollstaendig inline. */
   body { margin:0 !important; padding:0 !important; width:100% !important; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
   table { border-collapse:collapse; }
   a { text-decoration:none; }
@@ -87,7 +90,7 @@
     .sq-page, .sq-footer { background-color:#16191F !important; }
     .sq-card { background-color:#232830 !important; border-color:#3A424E !important; }
     .sq-eyebrow { color:#C3C9D1 !important; }
-    .sq-h1 { color:#FFFFFF !important; }
+    .sq-h1, .sq-strong { color:#FFFFFF !important; }
     .sq-text { color:#E1E5EA !important; }
     .sq-muted { color:#B4BCC7 !important; }
     .sq-panel { background-color:#2E3540 !important; border-color:#4A5361 !important; }
@@ -108,7 +111,7 @@
 
       <table role="presentation" class="sq-container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;">
 
-        <!-- Kopfband: Wortmarke als Text, damit keine Bilder geladen werden muessen -->
+        <!-- Kopfband: Wortmarke als Text, damit keine Bilder geladen werden müssen -->
         <tr>
           <td class="sq-pad" align="left" bgcolor="#2E3540" style="background-color:#2E3540;padding:26px 32px 24px 32px;border-radius:10px 10px 0 0;">
             <div style="margin:0 0 6px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;line-height:14px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#C3C9D1;">${msg("sqBrandEyebrow")}</div>
@@ -120,7 +123,7 @@
         <tr>
           <td class="sq-card sq-pad" bgcolor="#FFFFFF" style="background-color:#FFFFFF;padding:36px 32px 32px 32px;border-left:1px solid #E1E5EA;border-right:1px solid #E1E5EA;border-bottom:1px solid #E1E5EA;border-radius:0 0 10px 10px;">
 
-            <p class="sq-eyebrow" style="margin:0 0 10px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:16px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#5A6472;">${msg("sqProductLabel")}</p>
+            <p class="sq-eyebrow" style="margin:0 0 10px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:16px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#5A6472;">${sqEyebrow}</p>
 
             <h1 class="sq-h1" style="margin:0 0 20px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:24px;line-height:32px;font-weight:600;color:#232830;">${sqHeadline}</h1>
 
@@ -139,9 +142,9 @@
 
             <p class="sq-muted" style="margin:0 0 6px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#5A6472;">${msg("sqLinkExpiry", linkExpirationFormatter(linkExpiration))}</p>
 
-            <!-- Rueckfall: rohe Adresse, falls der Button entfernt wird -->
+            <!-- Rückfall: rohe Adresse, falls der Button entfernt wird -->
             <p class="sq-muted" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#5A6472;">${msg("sqLinkFallbackIntro")}</p>
-            <p class="sq-muted" style="margin:0 0 28px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#5A6472;word-break:break-all;"><a class="sq-link" href="${link}" target="_blank" style="color:#007D78;text-decoration:underline;word-break:break-all;">${link}</a></p>
+            <p class="sq-muted" style="margin:0 0 28px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;word-break:break-all;"><a class="sq-muted" href="${link}" target="_blank" style="color:#5A6472;text-decoration:none;word-break:break-all;">${link}</a></p>
 
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
@@ -156,7 +159,7 @@
                 <td class="sq-panel" bgcolor="#F6F8FA" style="background-color:#F6F8FA;border:1px solid #E1E5EA;border-radius:8px;padding:18px 20px;">
                   <p class="sq-text" style="margin:0 0 10px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;font-weight:600;color:#232830;">${msg("sqStepsTitle")}</p>
   <#list actionLabels as actionLabel>
-                  <p class="sq-text" style="margin:0 0 6px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#3A424E;"><span style="color:#232830;font-weight:600;">${actionLabel?index + 1}.</span>&nbsp;${actionLabel}</p>
+                  <p class="sq-text" style="margin:0 0 6px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#3A424E;"><span class="sq-strong" style="color:#232830;font-weight:600;">${actionLabel?index + 1}.</span>&nbsp;${actionLabel}</p>
   </#list>
                   <p class="sq-muted" style="margin:10px 0 0 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#5A6472;">${msg("sqStepsOutro")}</p>
                 </td>

@@ -113,20 +113,20 @@ export async function upsertAppUser(row) {
 
   const upsert = await restFetch("/rest/v1/app_user", {
     method: "POST",
-    query: { on_conflict: "issuer,tenant,subject", select: "id" },
+    query: { on_conflict: "issuer,tenant,subject", select: "id,active" },
     prefer: "resolution=merge-duplicates,return=representation",
     body: [record],
   });
 
   const upserted = firstRow(upsert.data);
   if (upsert.ok && typeof upserted?.id === "string") {
-    return { ok: true, id: upserted.id };
+    return { ok: true, id: upserted.id, active: upserted.active !== false };
   }
 
   // ── Fallback ohne ON CONFLICT ──────────────────────────────────────────────
   const existing = await restFetch("/rest/v1/app_user", {
     query: {
-      select: "id",
+      select: "id,active",
       issuer: `eq.${record.issuer}`,
       tenant: `eq.${record.tenant}`,
       subject: `eq.${record.subject}`,
@@ -139,22 +139,24 @@ export async function upsertAppUser(row) {
   if (typeof found?.id === "string") {
     const patch = await restFetch("/rest/v1/app_user", {
       method: "PATCH",
-      query: { id: `eq.${found.id}`, select: "id" },
+      query: { id: `eq.${found.id}`, select: "id,active" },
       prefer: "return=representation",
       body: { name: record.name, email: record.email, ...(row.active === undefined ? {} : { active: row.active }) },
     });
-    if (patch.ok) return { ok: true, id: found.id };
+    if (patch.ok) return { ok: true, id: found.id, active: found.active !== false };
     return { ok: false, code: patch.code };
   }
 
   const inserted = await restFetch("/rest/v1/app_user", {
     method: "POST",
-    query: { select: "id" },
+    query: { select: "id,active" },
     prefer: "return=representation",
     body: [record],
   });
   const newRow = firstRow(inserted.data);
-  if (inserted.ok && typeof newRow?.id === "string") return { ok: true, id: newRow.id };
+  if (inserted.ok && typeof newRow?.id === "string") {
+    return { ok: true, id: newRow.id, active: newRow.active !== false };
+  }
   return { ok: false, code: inserted.code ?? "REST_ERROR" };
 }
 

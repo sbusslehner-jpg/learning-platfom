@@ -1,0 +1,204 @@
+/* ============================================================
+   GroupIT Login-Theme – Türkis-Akzente über keycloak.v2
+   ServiceQ Lernplattform
+
+   Bewusst schlank: nur Farben, Radien und Fokuszustände. Struktur,
+   Raster und Barrierefreiheits-Markup bleiben unverändert von keycloak.v2.
+
+   Farbregeln aus docs/ux-ui-design-briefing.md (Abschnitt 7):
+     * Türkis (#00C8C1) markiert ausschließlich Handlung und Fortschritt.
+     * Auf Türkis steht NIE weißer Text, sondern Anthrazit-900 (#232830).
+     * Türkis als Textfarbe auf Weiß nur als #007D78 (turquoise-700).
+
+   Hinweis zur Keycloak-Version: keycloak.v2 baut in Keycloak 24–26 auf
+   PatternFly 5 auf (Präfix .pf-v5-). Die Regeln sind zusätzlich für
+   PatternFly 4 (.pf-c-) hinterlegt, damit das Theme bei einem Wechsel
+   der PatternFly-Generation nicht farblos zurückfällt.
+   ============================================================ */
+
+:root {
+  /* Primitive Tokens */
+  --sq-turquoise-50: #E6FAF9;
+  --sq-turquoise-500: #00C8C1;
+  --sq-turquoise-600: #009D97;
+  --sq-turquoise-700: #007D78;
+  --sq-anthracite-900: #232830;
+  --sq-anthracite-800: #2E3540;
+  --sq-anthracite-700: #3A424E;
+  --sq-anthracite-500: #5A6472;
+  --sq-anthracite-400: #8A93A0;
+  --sq-anthracite-200: #E1E5EA;
+  --sq-anthracite-50: #F6F8FA;
+
+  /* PatternFly 5 (Keycloak 24–26) */
+  --pf-v5-global--primary-color--100: var(--sq-turquoise-500);
+  --pf-v5-global--primary-color--200: var(--sq-turquoise-600);
+  --pf-v5-global--link--Color: var(--sq-turquoise-700);
+  --pf-v5-global--link--Color--hover: #00504C;
+  --pf-v5-global--BorderColor--100: var(--sq-anthracite-400);
+  --pf-v5-global--Color--100: var(--sq-anthracite-700);
+  --pf-v5-global--Color--200: var(--sq-anthracite-500);
+  --pf-v5-global--BorderRadius--sm: 6px;
+
+  /* PatternFly 4 (ältere keycloak.v2-Stände) */
+  --pf-global--primary-color--100: var(--sq-turquoise-500);
+  --pf-global--primary-color--200: var(--sq-turquoise-600);
+  --pf-global--link--Color: var(--sq-turquoise-700);
+  --pf-global--link--Color--hover: #00504C;
+  --pf-global--BorderColor--100: var(--sq-anthracite-400);
+}
+
+/* --- Seitenfläche: dunkler Anthrazit-Rahmen, ruhig und ohne Verlaufsspielerei --- */
+body,
+.login-pf body,
+.login-pf-page {
+  background-color: var(--sq-anthracite-800);
+  color: var(--sq-anthracite-700);
+}
+
+/* --- Anmeldekarte: weiße Fläche, damit das Logo in Originalfarben stehen kann --- */
+.card-pf,
+.pf-v5-c-card,
+.pf-c-login__main {
+  background-color: #FFFFFF;
+  border: 1px solid var(--sq-anthracite-200);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(35, 40, 48, 0.28);
+}
+
+/* --- Kopfbereich und Seitentitel --- */
+#kc-header,
+#kc-header-wrapper {
+  color: #FFFFFF;
+}
+
+#kc-page-title {
+  color: var(--sq-anthracite-900);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* --- Primäraktion: genau ein türkiser Button pro Bildschirm --- */
+.pf-v5-c-button.pf-m-primary,
+.pf-c-button.pf-m-primary,
+input[type="submit"].pf-m-primary,
+#kc-login {
+  background-color: var(--sq-turquoise-500);
+  color: var(--sq-anthracite-900);
+  border: 0;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-c-button.pf-m-primary:hover,
+input[type="submit"].pf-m-primary:hover,
+#kc-login:hover {
+  background-color: #00B3AC;
+  color: var(--sq-anthracite-900);
+}
+
+.pf-v5-c-button.pf-m-primary:active,
+.pf-c-button.pf-m-primary:active,
+#kc-login:active {
+  background-color: var(--sq-turquoise-600);
+  color: var(--sq-anthracite-900);
+}
+
+/* --- Sekundäre Aktionen --- */
+.pf-v5-c-button.pf-m-secondary,
+.pf-c-button.pf-m-secondary {
+  background-color: #FFFFFF;
+  border: 1px solid var(--sq-anthracite-400);
+  color: var(--sq-anthracite-700);
+  border-radius: 6px;
+}
+
+/* --- Links und Textaktionen --- */
+a,
+.pf-v5-c-button.pf-m-link,
+.pf-c-button.pf-m-link,
+#kc-registration a,
+#kc-info-message a {
+  color: var(--sq-turquoise-700);
+}
+
+a:hover,
+.pf-v5-c-button.pf-m-link:hover,
+.pf-c-button.pf-m-link:hover {
+  color: #00504C;
+  text-decoration: underline;
+}
+
+/* Links auf der dunklen Seitenfläche außerhalb der Karte */
+#kc-info-wrapper a,
+.login-pf-page-footer a {
+  color: #66E0DB;
+}
+
+/* --- Eingabefelder --- */
+.pf-v5-c-form-control,
+.pf-c-form-control,
+input[type="text"],
+input[type="password"],
+input[type="email"] {
+  border-radius: 6px;
+}
+
+.pf-v5-c-form-control:focus,
+.pf-c-form-control:focus,
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus {
+  border-color: var(--sq-turquoise-600);
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(0, 157, 151, 0.35);
+}
+
+/* --- Sichtbarer Tastaturfokus: 2 px Türkis-600 mit 2 px Abstand --- */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--sq-turquoise-600);
+  outline-offset: 2px;
+}
+
+/* Auf dunklem Grund wird der Ring aufgehellt (Türkis-300) */
+.login-pf-page-header a:focus-visible,
+.login-pf-page-footer a:focus-visible {
+  outline-color: #66E0DB;
+}
+
+/* --- Auswahl: Fläche Türkis-50, Text Türkis-700 --- */
+.pf-v5-c-check__input:checked,
+.pf-c-check__input:checked {
+  accent-color: var(--sq-turquoise-600);
+}
+
+/* --- Sprachauswahl --- */
+#kc-locale-dropdown a,
+.pf-v5-c-menu__list-item:hover {
+  color: var(--sq-turquoise-700);
+}
+
+/* --- Hinweis- und Fehlermeldungen bleiben in den Semantikfarben --- */
+.pf-v5-c-alert.pf-m-danger,
+.pf-c-alert.pf-m-danger {
+  --pf-v5-c-alert--BorderTopColor: #B42318;
+}
+
+.pf-v5-c-alert.pf-m-success,
+.pf-c-alert.pf-m-success {
+  --pf-v5-c-alert--BorderTopColor: #15803D;
+}
+
+/* --- Reduzierte Bewegung respektieren --- */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
