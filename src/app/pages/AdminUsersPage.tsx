@@ -326,7 +326,10 @@ export function AdminUsers() {
                       <td className="px-4 py-3 text-[#5A6472] whitespace-nowrap">{formatLastActive(u.lastActive)}</td>
                       <td className="px-4 py-3">
                         {demo ? (
-                          <span className="block text-right text-[12px] text-[#8A93A0]">{t("common.dbRequired")}</span>
+                          <span className="block text-right text-[13px] text-[#8A93A0]" title={t("common.dbRequired")}>
+                            <span aria-hidden="true">—</span>
+                            <span className="sr-only">{t("common.dbRequired")}</span>
+                          </span>
                         ) : confirmId === u.id ? (
                           <div className="flex items-center justify-end gap-1.5">
                             <button onClick={() => removeUser(u.id)} disabled={busyId === u.id}
