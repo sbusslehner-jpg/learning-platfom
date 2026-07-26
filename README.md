@@ -59,6 +59,10 @@ der Benutzer erhält eine im GroupIT-Design gestaltete E-Mail und setzt sein Pas
 selbst über einen zeitlich begrenzten Link. Es wird nie ein Passwort versendet.
 
 Ohne gesetzte `VITE_KEYCLOAK_*`-Variablen läuft die Anwendung weiter im Demo-Modus.
+Die `VITE_*`-Werte werden **beim Build** eingesetzt: Solange sie in Netlify fehlen,
+zeigt auch die Produktionsseite die Demo-Anmeldung – siehe
+**[docs/inbetriebnahme.md](docs/inbetriebnahme.md)** für den Weg von der Demo zur
+echten Anmeldung in acht Schritten.
 
 ## Go-Live-Checkliste
 
@@ -86,6 +90,7 @@ Lernfortschritt, Fehlerseiten, Responsive, Barrierefreiheit). Einzelne Phasen:
 
 ## Dokumentation
 
+- **[Inbetriebnahme](docs/inbetriebnahme.md) – Schritt-für-Schritt von der Demo zur echten Anmeldung**
 - **[Produktionsreife](docs/produktionsreife.md) – Stand nach der Keycloak-Anbindung, Testergebnisse, verbleibende Schritte**
 - [Produktstatus](docs/produktstatus.md) – gefundene Lücken und umgesetzte Änderungen der Finalisierung
 - [Keycloak einrichten](docs/keycloak-setup.md) – Stack, Admin-Konto, Einladungen, E-Mails

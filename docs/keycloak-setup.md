@@ -61,11 +61,17 @@ im Browser).
 
 ## 4. Redirect-URIs anpassen
 
-Im Realm-Import stehen Platzhalter. Ersetzen Sie
-`REPLACE-WITH-NETLIFY-SITE.netlify.app` durch Ihre echte Domain – entweder vor dem
-ersten Start direkt in `auth/realm/serviceq-realm.json` oder danach in der Konsole
-unter Clients → `learning-platform` → Valid redirect URIs / Web origins /
-Valid post logout redirect URIs.
+Im Realm-Import stehen Platzhalter. Am einfachsten mit dem mitgelieferten Skript –
+**vor** dem ersten Start:
+
+```bash
+./auth/configure.sh https://ihre-site.netlify.app https://auth.ihre-domain.de
+```
+
+Es ersetzt `REPLACE-WITH-NETLIFY-SITE.netlify.app` in Redirect-URIs, Web-Origins und
+Post-Logout-URIs, legt eine Sicherungskopie an und gibt anschließend die passenden
+Netlify-Variablen aus. Alternativ nachträglich in der Konsole unter Clients →
+`learning-platform` → Valid redirect URIs / Web origins / Valid post logout redirect URIs.
 
 ## 5. Umgebungsvariablen setzen
 
