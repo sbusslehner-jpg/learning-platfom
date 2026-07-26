@@ -1,0 +1,32 @@
+# ============================================================
+# Reverse Proxy vor Keycloak. Caddy holt und erneuert das
+# Let's-Encrypt-Zertifikat selbstständig – vorausgesetzt, der
+# A-Record der Domain zeigt auf diesen Server und Port 80/443
+# sind erreichbar.
+#
+# Sicherheits-Header setzt Keycloak selbst (Realm settings →
+# Security defenses: HSTS, X-Frame-Options, CSP). Hier werden
+# sie bewusst NICHT wiederholt – doppelte Header führen sonst
+# zu widersprüchlichen Werten.
+# ============================================================
+
+{
+	email {$ACME_EMAIL}
+	# Zum Testen ohne Rate-Limit-Risiko die nächste Zeile einkommentieren:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$KC_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# X-Forwarded-For / -Proto / -Host setzt Caddy automatisch;
+	# Keycloak liest sie über KC_PROXY_HEADERS=xforwarded.
+	reverse_proxy keycloak:8080
+
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

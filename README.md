@@ -62,7 +62,14 @@ Ohne gesetzte `VITE_KEYCLOAK_*`-Variablen läuft die Anwendung weiter im Demo-Mo
 Die `VITE_*`-Werte werden **beim Build** eingesetzt: Solange sie in Netlify fehlen,
 zeigt auch die Produktionsseite die Demo-Anmeldung – siehe
 **[docs/inbetriebnahme.md](docs/inbetriebnahme.md)** für den Weg von der Demo zur
-echten Anmeldung in acht Schritten.
+echten Anmeldung in acht Schritten. Auf einem eigenen Server erledigt das ein Skript:
+
+```bash
+./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de https://deine-site.netlify.app
+```
+
+Docker, Firewall, Passwörter, HTTPS-Zertifikat und Realm-Import in einem Lauf –
+Details in [docs/hetzner-keycloak.md](docs/hetzner-keycloak.md).
 
 ## Go-Live-Checkliste
 
@@ -91,6 +98,7 @@ Lernfortschritt, Fehlerseiten, Responsive, Barrierefreiheit). Einzelne Phasen:
 ## Dokumentation
 
 - **[Inbetriebnahme](docs/inbetriebnahme.md) – Schritt-für-Schritt von der Demo zur echten Anmeldung**
+- [Keycloak auf Hetzner](docs/hetzner-keycloak.md) – eigener Server per Setup-Skript, Zugriff über VS Code Remote-SSH
 - **[Produktionsreife](docs/produktionsreife.md) – Stand nach der Keycloak-Anbindung, Testergebnisse, verbleibende Schritte**
 - [Produktstatus](docs/produktstatus.md) – gefundene Lücken und umgesetzte Änderungen der Finalisierung
 - [Keycloak einrichten](docs/keycloak-setup.md) – Stack, Admin-Konto, Einladungen, E-Mails

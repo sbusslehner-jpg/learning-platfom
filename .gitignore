@@ -9,3 +9,7 @@ auth/.env
 .DS_Store
 npm-debug.log*
 dist-kc/
+
+# Vom Setup-Skript erzeugte Realm-Datei (enthält ggf. SMTP-Zugangsdaten)
+auth/realm-generated/
+auth/realm/*.bak

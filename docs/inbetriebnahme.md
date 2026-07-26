@@ -32,6 +32,11 @@ schaltet die Anwendung bewusst in den Demo-Modus, damit die Vorführung nicht br
 Keycloak ist ein Java-Server. Er kann **nicht** auf Netlify oder in Supabase Edge
 Functions laufen – er braucht einen eigenen Host mit HTTPS.
 
+> **Eigener Server bei Hetzner?** Dann Schritt 1 und 2 überspringen und stattdessen
+> [`hetzner-keycloak.md`](hetzner-keycloak.md) folgen: ein Skript richtet Docker,
+> Firewall, Passwörter, HTTPS-Zertifikat und den kompletten Stack ein. Das
+> E-Mail-Theme läuft dort ohne eigenes Docker-Image.
+
 ### Empfehlung für den schnellen Start: Railway
 
 Am wenigsten Aufwand, weil HTTPS-Domain und PostgreSQL automatisch kommen.
@@ -60,7 +65,7 @@ Am wenigsten Aufwand, weil HTTPS-Domain und PostgreSQL automatisch kommen.
 | Weg | Aufwand | Anmerkung |
 |---|---|---|
 | **Render.com** | gering | wie Railway; Web Service aus Docker-Image + Postgres |
-| **Hetzner Cloud** (DE) | mittel | ~5 €/Monat, volle Kontrolle. `auth/docker-compose.yml` läuft dort direkt, TLS über Caddy oder Traefik davor |
+| **Hetzner Cloud** (DE) | gering, per Skript | ~4 €/Monat, volle Kontrolle, deutscher Standort. Fertige Anleitung samt Setup-Skript: [`hetzner-keycloak.md`](hetzner-keycloak.md) |
 | **Azure Container Apps** | mittel | passt, wenn ihr ohnehin Microsoft-Umgebung fahrt (Entra ID) |
 | **Cloud-IAM / Phase Two** | gering | gehostetes Keycloak als Dienst, kein eigener Betrieb |
 

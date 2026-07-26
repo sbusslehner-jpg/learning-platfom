@@ -97,6 +97,20 @@ Die Oberfläche unterstützt zwei Modi, damit die Vorführung nicht bricht:
 - **Demo-Modus:** Variable nicht gesetzt → bisheriges Verhalten (Demo-Anmeldung,
   umschaltbare Rollen). Für Produktivbetrieb **nicht** zulässig.
 
+## Dateien in diesem Verzeichnis
+
+| Datei | Zweck |
+|---|---|
+| `docker-compose.yml` | Entwicklung und Abnahme: `start-dev`, Mailpit als Postfach |
+| `docker-compose.prod.yml` | Produktivbetrieb: `start`, Caddy mit automatischem HTTPS, kein Mailpit, keine offenen Ports außer 80/443 |
+| `Caddyfile` | Reverse Proxy und Zertifikatsverwaltung |
+| `configure.sh` | Trägt echte Adressen (und optional SMTP) in die Realm-Definition ein |
+| `hetzner-setup.sh` | Richtet den kompletten Stack auf einem frischen Root-Server ein |
+| `realm/serviceq-realm.json` | Realm-Vorlage mit Platzhalter-Domain |
+| `themes/groupit/` | Login- und E-Mail-Theme im GroupIT-Design |
+
 ## Nächste Schritte
 
-Einrichtung: [`docs/keycloak-setup.md`](../docs/keycloak-setup.md)
+- Umstellung von Demo auf Produktion: [`docs/inbetriebnahme.md`](../docs/inbetriebnahme.md)
+- Eigener Server bei Hetzner: [`docs/hetzner-keycloak.md`](../docs/hetzner-keycloak.md)
+- Referenz und Härtung: [`docs/keycloak-setup.md`](../docs/keycloak-setup.md)
