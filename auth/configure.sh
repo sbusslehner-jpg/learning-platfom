@@ -239,8 +239,13 @@ if grep -q "REPLACE-WITH-NETLIFY-SITE" "$TARGET"; then
 fi
 
 if [[ -n "$OUT_FILE" ]]; then
-  # Die Datei kann ein SMTP-Passwort enthalten – nur für den Eigentümer lesbar.
-  chmod 600 "$TARGET"
+  # Die Datei enthält Secret und SMTP-Passwort, darf also nicht für alle lesbar
+  # sein. `600` ist aber zu streng: Der Keycloak-Container läuft als
+  # uid=1000, gid=0 und bekäme beim Import eine AccessDeniedException –
+  # der Container startet dann in einer Endlosschleife neu.
+  # `640` mit Eigentümer root gibt der Gruppe root (gid 0) Leserecht, und
+  # genau die hat der Container. Für alle anderen bleibt die Datei zu.
+  chmod 640 "$TARGET"
   echo "Realm geschrieben nach: $TARGET (Quelldatei unverändert)"
 else
   echo "Realm angepasst. Sicherungskopie: $(basename "$REALM_FILE").bak"

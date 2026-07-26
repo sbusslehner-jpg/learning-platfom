@@ -277,8 +277,30 @@ for i in $(seq 1 60); do
 done
 echo
 if [[ "$(docker inspect --format '{{.State.Health.Status}}' sq-keycloak 2>/dev/null)" != "healthy" ]]; then
-  warn "Keycloak meldet noch keine Bereitschaft. Log prüfen:"
-  warn "  docker compose -f $COMPOSE_FILE logs -f keycloak"
+  warn "Keycloak meldet keine Bereitschaft."
+  restarts="$(docker inspect --format '{{.RestartCount}}' sq-keycloak 2>/dev/null || echo '?')"
+  if [[ "$restarts" != "0" && "$restarts" != "?" ]]; then
+    warn "Der Container ist bereits $restarts mal neu gestartet – er kommt nicht hoch."
+  fi
+  # Die eigentliche Ursache steht im Container-Log, nicht in der Statusmeldung.
+  # Sie hier gleich mitzuliefern spart die Suche.
+  echo >&2
+  echo "  ── letzte Fehlermeldungen aus dem Container ──" >&2
+  docker logs --tail 200 sq-keycloak 2>&1 \
+    | grep -iE "ERROR|Caused by|Exception" | tail -6 | sed 's/^/  /' >&2
+  echo >&2
+  case "$(docker logs --tail 200 sq-keycloak 2>&1)" in
+    *AccessDenied*|*Permission\ denied*)
+      warn "Das sieht nach fehlenden Leserechten auf einer eingebundenen Datei aus."
+      warn "  Prüfen:  ls -l $AUTH_DIR/realm-generated/serviceq-realm.json"
+      warn "  Der Container liest als uid=1000, gid=0 – die Datei braucht 640 mit Gruppe root."
+      ;;
+    *"Failed to run import"*)
+      warn "Der Realm-Import ist gescheitert. Vollständige Meldung mit:"
+      warn "  docker compose -f $COMPOSE_FILE run --rm -T --no-deps keycloak start --import-realm --verbose"
+      ;;
+  esac
+  warn "Vollständiges Log:  docker compose -f $COMPOSE_FILE logs -f keycloak"
   exit 1
 fi
 
