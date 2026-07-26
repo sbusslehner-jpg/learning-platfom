@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, Check, Map as MapIcon, Plus, Search, Shield,
+  AlertCircle, Check, Map as MapIcon, MailPlus, Plus, Search, Send, Shield,
   ToggleLeft, ToggleRight, Trash2, Users as UsersIcon, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import {
   setUserActive, setUserMarkets, setUserRoles,
   type AdminMarket, type AdminUser,
 } from "../data/api";
+import { INVITE_AVAILABLE, inviteUser, resendInvite } from "../data/inviteApi";
 
 // ─── Admin: Users ─────────────────────────────────────────────────────────────
 // Echte Verwaltung über Supabase (app_user, user_role_assignment, user_market).
@@ -178,20 +179,51 @@ export function AdminUsers() {
     if (Object.keys(next).length) return;
 
     setSubmitting(true);
-    const res = await createUser({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      roles: form.roles,
-      marketIds: form.marketIds,
-      uiLanguage: lang,
-    });
+
+    // Mit Keycloak-Anbindung: Konto serverseitig anlegen und Einladung versenden.
+    // Der Benutzer setzt sein Passwort selbst über den Link – es wird nie eines
+    // per E-Mail verschickt. Ohne Anbindung bleibt das direkte Anlegen (Demo).
+    const res = INVITE_AVAILABLE
+      ? await (async () => {
+          const full = form.name.trim();
+          const cut = full.lastIndexOf(" ");
+          const r = await inviteUser({
+            firstName: cut > 0 ? full.slice(0, cut) : full,
+            lastName: cut > 0 ? full.slice(cut + 1) : "",
+            email: form.email.trim(),
+            roles: form.roles,
+            markets: form.marketIds.map(marketCode),
+            locale: lang,
+          });
+          if (!r.ok && r.fieldErrors?.length) {
+            setErrors({ email: r.fieldErrors.join(" · ") });
+          }
+          return r;
+        })()
+      : await createUser({
+          name: form.name.trim(),
+          email: form.email.trim(),
+          roles: form.roles,
+          marketIds: form.marketIds,
+          uiLanguage: lang,
+        });
+
     setSubmitting(false);
     if (!res.ok) { toast.error(res.message ?? t("common.saveError")); return; }
-    toast.success("Benutzer angelegt");
+    toast.success(INVITE_AVAILABLE ? (res as { message: string }).message : "Benutzer angelegt");
     setShowPanel(false);
     setForm(EMPTY_FORM);
     setErrors({});
     await load(true);
+  };
+
+  /** Einladung erneut versenden (z. B. wenn der Link abgelaufen ist). */
+  const handleResend = async (email: string | null) => {
+    if (!email) { toast.error("Für diesen Benutzer ist keine E-Mail-Adresse hinterlegt."); return; }
+    setBusyId(email);
+    const r = await resendInvite(email);
+    setBusyId(null);
+    r.ok ? toast.success(r.message) : toast.error(r.message);
   };
 
   const marketCode = (id: string) => markets.find(m => m.id === id)?.code ?? id;
@@ -213,7 +245,7 @@ export function AdminUsers() {
           title={demo ? t("common.dbRequired") : undefined}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-[14px] transition-all ${FOCUS} ${demo ? "opacity-50 cursor-not-allowed" : ""}`}
           style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
-          <Plus size={16} /> Benutzer anlegen
+          {INVITE_AVAILABLE ? <><MailPlus size={16} /> Benutzer einladen</> : <><Plus size={16} /> Benutzer anlegen</>}
         </button>
       </div>
 
@@ -370,6 +402,13 @@ export function AdminUsers() {
                               className={`p-1.5 rounded text-[#8A93A0] hover:text-[#007D78] hover:bg-[#E6FAF9] transition-colors ${FOCUS}`}>
                               <MapIcon size={15} />
                             </button>
+                            {INVITE_AVAILABLE && (
+                              <button onClick={() => void handleResend(u.email)} disabled={busyId === u.email}
+                                aria-label={`Einladung an ${u.name} erneut senden`} title="Einladung erneut senden"
+                                className={`p-1.5 rounded text-[#8A93A0] hover:text-[#007D78] hover:bg-[#E6FAF9] transition-colors ${FOCUS} disabled:opacity-50`}>
+                                <Send size={15} />
+                              </button>
+                            )}
                             <button onClick={() => { closeEditors(); setConfirmId(u.id); }}
                               aria-label={`${u.name} löschen`} title={t("common.delete")}
                               className={`p-1.5 rounded text-[#8A93A0] hover:text-[#B42318] hover:bg-[#FDEEEC] transition-colors ${FOCUS}`}>
@@ -466,7 +505,9 @@ export function AdminUsers() {
           <div role="dialog" aria-modal="true" aria-labelledby="create-user-title"
             className="w-full max-w-[480px] bg-white shadow-2xl flex flex-col h-full">
             <div className="px-6 py-4 border-b border-[#E1E5EA] flex items-center justify-between">
-              <h2 id="create-user-title" className="text-[17px] font-semibold text-[#232830]">Neuen Benutzer anlegen</h2>
+              <h2 id="create-user-title" className="text-[17px] font-semibold text-[#232830]">
+                {INVITE_AVAILABLE ? "Benutzer einladen" : "Neuen Benutzer anlegen"}
+              </h2>
               <button onClick={() => setShowPanel(false)} aria-label={t("common.close")}
                 className={`p-1.5 rounded-lg text-[#5A6472] hover:bg-[#EEF1F4] ${FOCUS}`}>
                 <X size={18} />
@@ -475,6 +516,19 @@ export function AdminUsers() {
 
             <form className="flex-1 overflow-y-auto p-6 space-y-4"
               onSubmit={e => { e.preventDefault(); void submitForm(); }}>
+
+              {/* Ablauf transparent machen: der Admin verschickt kein Passwort. */}
+              {INVITE_AVAILABLE && (
+                <div className="flex items-start gap-2 bg-[#EBF1FE] text-[#1D5BD6] rounded-lg px-3 py-2.5 text-[12px] leading-snug">
+                  <MailPlus size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Der Benutzer erhält eine E-Mail mit einem Einladungslink und setzt sein
+                    Passwort selbst. Es wird <strong>kein Passwort versendet</strong>.
+                    Der Link ist 3 Tage gültig und kann danach erneut gesendet werden.
+                  </span>
+                </div>
+              )}
+
               <div>
                 <label htmlFor="new-user-name" className="block text-[13px] font-medium text-[#3A424E] mb-1.5">
                   Vollständiger Name <span aria-hidden="true">*</span>
@@ -570,7 +624,9 @@ export function AdminUsers() {
               <button onClick={() => void submitForm()} disabled={submitting}
                 className={`flex-1 h-11 rounded-lg font-semibold text-[15px] flex items-center justify-center gap-2 transition-all ${FOCUS} disabled:opacity-60`}
                 style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
-                <Plus size={16} aria-hidden="true" /> {submitting ? t("common.saving") : t("common.create")}
+                {INVITE_AVAILABLE
+                  ? <><MailPlus size={16} aria-hidden="true" /> {submitting ? "Einladung wird versendet …" : "Einladung senden"}</>
+                  : <><Plus size={16} aria-hidden="true" /> {submitting ? t("common.saving") : t("common.create")}</>}
               </button>
               <button onClick={() => setShowPanel(false)}
                 className={`h-11 px-4 rounded-lg border border-[#C3C9D1] font-medium text-[14px] text-[#3A424E] hover:bg-[#EEF1F4] transition-colors ${FOCUS}`}>

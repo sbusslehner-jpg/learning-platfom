@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Screen } from "./demo";
+import { KEYCLOAK_MODE, useKeycloakAuth } from "./keycloakAuth";
 
 // ============================================================
 // Rollen- und Berechtigungsmodell (Konzept §2)
@@ -8,10 +9,16 @@ import type { Screen } from "./demo";
 // Berechtigungen werden aus den Rollen abgeleitet – die Oberfläche prüft
 // immer Berechtigungen, nie Rollen direkt.
 //
+// Zwei Quellen für die aktiven Rollen:
+//
+//  • KEYCLOAK-Modus: die Realm-Rollen aus dem Access-Token. Verbindlich,
+//    nicht umschaltbar – `setRoles()` ist dort wirkungslos.
+//  • DEMO-Modus: ein umschaltbarer, in localStorage gemerkter Wert, damit
+//    die Berechtigungslogik vorgeführt werden kann.
+//
 // ⚠️  Sicherheitshinweis: Diese Prüfung ist Oberflächen-Ergonomie, KEIN
 //     Schutz. Verbindlich durchgesetzt werden Rechte serverseitig (RLS /
-//     autorisierte Endpunkte). Solange keine echte Anmeldung aktiv ist,
-//     lässt sich die Rolle im Demo-Modus frei wechseln.
+//     autorisierte Endpunkte).
 // ============================================================
 
 export type Role = "admin" | "editor" | "user";
@@ -72,7 +79,17 @@ export function canAccessScreen(roles: Role[], screen: Screen): boolean {
   return hasPermission(roles, needed);
 }
 
-// ─── Aktive Rollen (Demo: umschaltbar und persistiert) ───────────────────────
+// ─── Aktive Rollen ───────────────────────────────────────────────────────────
+
+/**
+ * true, wenn die Rollen aus einer echten Anmeldung stammen und damit
+ * verbindlich sind. Die Oberfläche blendet den Demo-Rollenwechsler dann aus
+ * (`setRoles()` bleibt vorhanden, hat aber keine Wirkung).
+ */
+export const ROLES_ARE_AUTHORITATIVE = KEYCLOAK_MODE;
+
+/** Stabile Referenz: verhindert unnötige Neuberechnungen in useRoles(). */
+const NO_ROLES: Role[] = [];
 
 const STORAGE_KEY = "sq-demo-roles";
 const DEFAULT_ROLES: Role[] = ["admin", "editor", "user"]; // Demo: alles sichtbar
@@ -95,7 +112,18 @@ function readRoles(): Role[] {
 const listeners = new Set<(r: Role[]) => void>();
 let current: Role[] = typeof localStorage === "undefined" ? DEFAULT_ROLES : readRoles();
 
+/**
+ * Rollen setzen – nur im Demo-Modus.
+ *
+ * Bei echter Anmeldung kommen die Rollen aus dem Token; eine Änderung in der
+ * Oberfläche wäre irreführend (sie würde serverseitig ohnehin nichts bewirken)
+ * und wird daher bewusst verweigert.
+ */
 export function setRoles(roles: Role[]) {
+  if (ROLES_ARE_AUTHORITATIVE) {
+    console.warn("[roles] Rollen stammen aus dem Token und sind nicht umschaltbar.");
+    return;
+  }
   current = roles.length ? roles : ["user"];
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(current)); } catch { /* ignorieren */ }
   for (const l of listeners) l(current);
@@ -103,13 +131,18 @@ export function setRoles(roles: Role[]) {
 
 /** Aktive Rollen + Berechtigungsprüfer. */
 export function useRoles() {
-  const [roles, setLocal] = useState<Role[]>(current);
+  // Im Demo-Modus ist der Hook ein No-Op (profile === null).
+  const { profile } = useKeycloakAuth();
+  const [demoRoles, setLocal] = useState<Role[]>(current);
 
   useEffect(() => {
+    if (ROLES_ARE_AUTHORITATIVE) return;
     const l = (r: Role[]) => setLocal(r);
     listeners.add(l);
     return () => { listeners.delete(l); };
   }, []);
+
+  const roles = ROLES_ARE_AUTHORITATIVE ? (profile?.roles ?? NO_ROLES) : demoRoles;
 
   const can = useCallback((p: Permission) => hasPermission(roles, p), [roles]);
   const canScreen = useCallback((s: Screen) => canAccessScreen(roles, s), [roles]);

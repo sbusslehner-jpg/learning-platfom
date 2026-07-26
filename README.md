@@ -38,6 +38,26 @@ src/imports/                Assets aus Figma (GroupIT-Logo u. a.)
 src/guidelines/             Design-Guidelines aus Figma Make
 ```
 
+## Authentifizierung (Keycloak)
+
+Produktivbetrieb läuft über **Keycloak** (Authorization Code + PKCE). Der Stack liegt
+unter [`auth/`](auth/) und startet mit einem Befehl:
+
+```bash
+cd auth && cp .env.example .env && docker compose up -d
+```
+
+Der Realm `serviceq` wird automatisch importiert – mit Rollen, Clients, SMTP und einem
+**Administrator-Konto**. Zugangsdaten, Einladungs-Ablauf und Produktionshärtung:
+[docs/keycloak-setup.md](docs/keycloak-setup.md) · Architekturvertrag: [auth/README.md](auth/README.md)
+
+Administratoren laden neue Benutzer direkt in der Oberfläche ein
+(**Verwaltung → Benutzer → Benutzer einladen**): Das Konto wird in Keycloak angelegt,
+der Benutzer erhält eine im GroupIT-Design gestaltete E-Mail und setzt sein Passwort
+selbst über einen zeitlich begrenzten Link. Es wird nie ein Passwort versendet.
+
+Ohne gesetzte `VITE_KEYCLOAK_*`-Variablen läuft die Anwendung weiter im Demo-Modus.
+
 ## Go-Live-Checkliste
 
 - **Eigene Domain:** Netlify → Domain management → Add a domain → DNS-Eintrag (CNAME auf die Netlify-Subdomain) setzen; HTTPS-Zertifikat stellt Netlify automatisch aus.
