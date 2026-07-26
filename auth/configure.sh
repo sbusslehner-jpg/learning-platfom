@@ -118,8 +118,13 @@ if generated:
                 continue
             removed = 0
             for key in ("redirectUris", "webOrigins", "postLogoutRedirectUris"):
-                kept = [u for u in client.get(key, []) if not is_local(u)]
-                removed += len(client.get(key, [])) - len(kept)
+                # Nicht vorhandene Felder überspringen. `postLogoutRedirectUris`
+                # etwa gibt es auf Client-Ebene nicht – die Liste steht in
+                # attributes["post.logout.redirect.uris"] und wird unten behandelt.
+                if key not in client:
+                    continue
+                kept = [u for u in client[key] if not is_local(u)]
+                removed += len(client[key]) - len(kept)
                 if not kept:
                     # Ohne Redirect-URI wäre der Client unbrauchbar – dann
                     # lieber alles stehen lassen und laut werden.
