@@ -45,8 +45,22 @@ src/guidelines/             Design-Guidelines aus Figma Make
 - **Impressum & Datenschutz:** Die Platzhalter unter `/impressum` und `/datenschutz` durch juristisch geprüfte Texte ersetzen.
 - **Noch offen für den Produktivbetrieb:** echte Anmeldung (Supabase Auth) mit Markt-/Rollen-Sichtbarkeit, Redaktions-Schreibpfad, serverseitiger Lernfortschritt, Monitoring.
 
+## Tests
+
+```bash
+npm run test:unit   # 30 Unit-Tests der SSO-Kernlogik (Node)
+npm run test:e2e    # 50 End-to-End-Prüfungen im echten Browser (Playwright)
+npm test            # beide
+```
+
+Der E2E-Lauf baut die Anwendung, startet `vite preview` und fährt die Prozesse für
+Administrator, Editor und Lernenden durch (Rollen-Guards, Sprachumschaltung,
+Lernfortschritt, Fehlerseiten, Responsive, Barrierefreiheit). Einzelne Phasen:
+`node tests/e2e.mjs A B`.
+
 ## Dokumentation
 
+- **[Produktstatus](docs/produktstatus.md) – gefundene Lücken, umgesetzte Änderungen, Testergebnisse, offene Punkte, Produktionsreife**
 - [Konzept](docs/konzept.md) – Zielbild, Rollen, Datenmodell, Roadmap
 - [UX/UI-Designbriefing](docs/ux-ui-design-briefing.md) – Farbsystem, Typografie, Komponenten, Screens
 

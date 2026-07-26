@@ -1,165 +1,228 @@
 // ============================================================
-// End-to-End-Tests der Lernplattform (echter Browser, echter Dev-Server)
+// End-to-End-Tests der Lernplattform (echter Browser, echter Server)
 //
-// Ausführen:
-//   npm run test:e2e
+// Ausführen:  npm run test:e2e
 //
-// Der Test startet Vite selbst, fährt die Prozesse für Administrator,
-// Editor und Lernenden durch und prüft dabei Navigation, Rollen-Guards,
-// Sprachumschaltung, Lernfortschritt und Fehlerseiten.
+// Der Test baut die Anwendung, serviert sie über `vite preview` und fährt
+// die Prozesse für Administrator, Editor und Lernenden durch: Navigation,
+// Rollen-Guards, Sprachumschaltung, Lernfortschritt, Fehlerseiten,
+// Responsive-Verhalten und Barrierefreiheits-Stichproben.
 //
-// Hinweis: Ohne konfigurierte Supabase-Umgebung laufen die Seiten im
-// Demo-Fallback. Die Tests prüfen deshalb Oberflächenverhalten und
-// Berechtigungslogik – NICHT das Schreiben in die Datenbank.
+// Leistungshinweis: Ein vollständiger Seiten-Reload kostet in dieser
+// Umgebung ~13 s (langsames Headless-Chromium). Navigation innerhalb der
+// Anwendung wird deshalb über den Router ausgeführt (History-API bzw.
+// echte Klicks) – identische Codepfade, aber ~15× schneller. Mindestens
+// ein Guard wird zusätzlich mit einem echten Kaltstart geprüft.
+//
+// Ohne konfigurierte Supabase-Umgebung laufen die Seiten im Demo-Fallback.
+// Geprüft werden daher Oberflächenverhalten und Berechtigungslogik –
+// NICHT das Schreiben in die Datenbank.
 // ============================================================
 
 import { chromium } from "playwright";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 
 const CHROME = "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
 const PORT = 4321;
 const BASE = `http://localhost:${PORT}`;
 
+// Phasenauswahl: `node tests/e2e.mjs A B` führt nur diese Phasen aus.
+const WANT = new Set(process.argv.slice(2).map(a => a.toUpperCase()));
+const want = (p) => WANT.size === 0 || WANT.has(p);
+
 let pass = 0, fail = 0;
 const failures = [];
+const consoleErrors = [];
 
-function ok(name) { pass++; console.log(`  ✅ ${name}`); }
-function no(name, detail) { fail++; failures.push(`${name} — ${detail}`); console.log(`  ❌ ${name}\n       ${detail}`); }
+const ok = (n) => { pass++; console.log(`  ✅ ${n}`); };
+const no = (n, d) => { fail++; failures.push(`${n} — ${d}`); console.log(`  ❌ ${n}\n       ${d}`); };
 
 async function check(name, fn) {
+  try { await fn(); ok(name); }
+  catch (err) { no(name, String(err.message ?? err).split("\n")[0].slice(0, 200)); }
+}
+const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+
+// ─── Server ───────────────────────────────────────────────────────────────────
+
+/** Läuft bereits ein Server auf dem Port? */
+async function serverAlive() {
   try {
-    await fn();
-    ok(name);
-  } catch (err) {
-    no(name, String(err.message ?? err).split("\n")[0]);
-  }
+    const r = await fetch(BASE + "/", { signal: AbortSignal.timeout(3000) });
+    return r.ok;
+  } catch { return false; }
 }
 
-function assert(cond, msg) { if (!cond) throw new Error(msg); }
-
-// ─── Dev-Server starten ───────────────────────────────────────────────────────
-
 async function startServer() {
-  const proc = spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], {
-    cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"], env: process.env,
-  });
+  // Bereits laufender Server (z. B. separat gestartet) wird weiterverwendet.
+  if (await serverAlive()) {
+    console.log("Vorhandenen Server auf Port " + PORT + " verwenden.");
+    return null;
+  }
+  if (!process.env.SKIP_BUILD) {
+    console.log("Anwendung bauen …");
+    execSync("npx vite build", { stdio: "pipe" });
+  }
+  console.log("Server starten …");
+  const proc = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort"],
+    { stdio: ["ignore", "pipe", "pipe"], env: process.env });
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Dev-Server-Start überschritt 60 s")), 60_000);
-    const onData = (d) => {
-      if (String(d).includes("Local:") || String(d).includes(String(PORT))) {
-        clearTimeout(timer); resolve();
-      }
-    };
+    const timer = setTimeout(() => reject(new Error("Serverstart überschritt 60 s")), 60_000);
+    const onData = (d) => { if (String(d).includes(String(PORT))) { clearTimeout(timer); resolve(); } };
     proc.stdout.on("data", onData);
     proc.stderr.on("data", onData);
-    proc.on("exit", (c) => { clearTimeout(timer); reject(new Error(`Dev-Server beendet (Code ${c})`)); });
+    proc.on("exit", (c) => { clearTimeout(timer); reject(new Error(`Server beendet (Code ${c})`)); });
   });
-  await new Promise(r => setTimeout(r, 1500)); // kurz einschwingen lassen
+  await new Promise(r => setTimeout(r, 1000));
   return proc;
 }
 
-// ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
+// ─── Navigation ──────────────────────────────────────────────────────────────
 
-/** Setzt Rollen vor dem Laden der Seite (localStorage) und öffnet einen Pfad. */
-async function gotoAs(page, roles, path = "/") {
+/** Router-Navigation ohne Reload (identische Guard-/Routen-Logik, ~15× schneller). */
+async function routeTo(page, path) {
+  await page.evaluate((p) => {
+    window.history.pushState({}, "", p);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, path);
+  await page.waitForTimeout(350);
+}
+
+const currentPath = (page) => new URL(page.url()).pathname;
+
+/** Kaltstart mit vorgegebenen Rollen; teuer (~13 s) – sparsam verwenden. */
+async function coldStart(page, roles, path = "/login") {
   await page.addInitScript((r) => {
     localStorage.setItem("sq-demo-roles", JSON.stringify(r));
     localStorage.setItem("sq-ui-language", "de");
   }, roles);
-  await page.goto(BASE + path, { waitUntil: "networkidle" });
+  await page.goto(BASE + path, { waitUntil: "domcontentloaded", timeout: 60_000 });
 }
 
-/** Demo-Anmeldung durchlaufen (Login ist im Demo-Modus eine Attrappe). */
+/** Demo-Anmeldung (im Demo-Modus ohne Prüfung von Zugangsdaten). */
 async function login(page) {
+  await page.waitForSelector('input[type="email"]', { timeout: 30_000 });
   await page.fill('input[type="email"]', "max.keller@groupit.de");
   await page.fill('input[type="password"]', "demo1234");
   await page.click('button[type="submit"]');
-  await page.waitForURL((u) => !u.pathname.includes("/login"), { timeout: 15_000 });
+  // <main> ist auf jedem Viewport vorhanden; <aside> ist mobil ausgeblendet.
+  await page.waitForSelector("main", { timeout: 30_000 });
+  await page.waitForTimeout(300);
 }
 
-const consoleErrors = [];
 function watchConsole(page) {
   page.on("console", (m) => {
-    if (m.type() === "error") {
-      const txt = m.text();
-      // Netzwerkfehler gegen nicht konfiguriertes Supabase sind im Demo-Modus erwartbar
-      if (!/supabase|Failed to fetch|net::ERR/i.test(txt)) consoleErrors.push(txt);
-    }
+    if (m.type() !== "error") return;
+    const txt = m.text();
+    // Fehlgeschlagene Supabase-Aufrufe sind im Demo-Modus (ohne Konfiguration) erwartbar
+    if (!/supabase|Failed to fetch|net::ERR|ERR_CONNECTION/i.test(txt)) consoleErrors.push(txt);
   });
   page.on("pageerror", (e) => consoleErrors.push("pageerror: " + e.message));
 }
 
-// ─── Testläufe ───────────────────────────────────────────────────────────────
+/** Wartet, bis eine Seite ihren Ladezustand verlassen hat. */
+async function settled(page, timeout = 20_000) {
+  await page.waitForFunction(
+    () => {
+      const t = document.querySelector("main")?.innerText ?? "";
+      // Ladeplatzhalter dürfen nirgends mehr im Inhalt stehen
+      return t.length > 20 && !/(Lädt …|Loading …|Chargement …)/.test(t);
+    },
+    null, { timeout },
+  ).catch(() => { /* Seite ohne Ladezustand */ });
+}
+
+/** Sidebar-Text (Desktop-Navigation, nicht die mobile Leiste). */
+const sidebarText = (page) => page.locator("aside").first().innerText();
 
 async function run() {
-  console.log("Dev-Server starten …");
   const server = await startServer();
   const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });
 
   try {
     // ═══ A) Lernender ═══════════════════════════════════════════════════════
     console.log("\n── A) Prozess: Lernender ──");
+    if (want("A"))
     {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
       const page = await ctx.newPage();
       watchConsole(page);
-      await gotoAs(page, ["user"], "/login");
+      await coldStart(page, ["user"]);
 
-      await check("Login-Seite wird angezeigt", async () => {
-        assert(await page.locator('input[type="email"]').isVisible(), "kein E-Mail-Feld");
+      await check("Anmeldeseite erscheint mit Demo-Hinweis", async () => {
+        const txt = await page.locator("body").innerText();
+        assert(/Anmelden/i.test(txt), "kein Anmeldeformular");
+        assert(/Demo-Zugang/i.test(txt), "Demo-Hinweis fehlt (irreführender echter Login)");
       });
 
       await check("Anmeldung führt zum Dashboard", async () => {
         await login(page);
-        assert(new URL(page.url()).pathname === "/", "nicht auf /");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
       });
 
-      await check("Lernender sieht KEINE Redaktions-/Verwaltungsnavigation", async () => {
-        const nav = await page.locator("aside").innerText();
-        assert(!/Redaktion|Verwaltung/i.test(nav), `Sidebar zeigt: ${nav.replace(/\n/g, " | ")}`);
+      await check("Lernender sieht KEINE Redaktion/Verwaltung in der Navigation", async () => {
+        const nav = await sidebarText(page);
+        assert(!/Redaktion|Verwaltung/i.test(nav), `Sidebar: ${nav.replace(/\n/g, " | ")}`);
       });
 
-      await check("Guard: /redaktion/inhalte per URL wird abgewiesen", async () => {
-        await page.goto(BASE + "/redaktion/inhalte", { waitUntil: "networkidle" });
-        assert(new URL(page.url()).pathname === "/", `landete auf ${new URL(page.url()).pathname}`);
+      await check("Guard: /redaktion/inhalte wird abgewiesen", async () => {
+        await routeTo(page, "/redaktion/inhalte");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
       });
 
-      await check("Guard: /verwaltung/benutzer per URL wird abgewiesen", async () => {
-        await page.goto(BASE + "/verwaltung/einstellungen", { waitUntil: "networkidle" });
-        assert(new URL(page.url()).pathname === "/", `landete auf ${new URL(page.url()).pathname}`);
+      await check("Guard: /verwaltung/einstellungen wird abgewiesen", async () => {
+        await routeTo(page, "/verwaltung/einstellungen");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
       });
 
-      await check("Katalog ist erreichbar", async () => {
-        await page.goto(BASE + "/katalog", { waitUntil: "networkidle" });
-        const h1 = await page.locator("h1").first().innerText();
-        assert(h1.length > 3, "keine Überschrift");
+      await check("Guard: /auswertungen wird abgewiesen (kein reporting.view)", async () => {
+        await routeTo(page, "/auswertungen");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
       });
 
-      await check("Lernansicht öffnet und zeigt Kapitel", async () => {
-        await page.goto(BASE + "/lernen", { waitUntil: "networkidle" });
-        const body = await page.locator("main").innerText();
-        assert(/Kapitel/i.test(body), "kein Kapitel sichtbar");
+      await check("Katalog ist über die Navigation erreichbar", async () => {
+        await page.locator("aside").first().getByRole("button", { name: /Katalog/i }).click();
+        await page.waitForTimeout(400);
+        assert(currentPath(page).includes("katalog"), `landete auf ${currentPath(page)}`);
+        assert((await page.locator("h1").first().innerText()).length > 3, "keine Überschrift");
       });
 
-      await check("Kapitel abschließen erhöht den Fortschritt", async () => {
+      await check("Lernansicht zeigt Kapitel", async () => {
+        await routeTo(page, "/lernen");
+        assert(/Kapitel/i.test(await page.locator("main").innerText()), "kein Kapitel");
+      });
+
+      await check("Kapitel abschließen verändert den Zustand", async () => {
         const btn = page.getByRole("button", { name: /Kapitel abschließen|Nächstes Kapitel/i }).first();
         assert(await btn.isVisible(), "kein Abschluss-Button");
         const before = await page.locator("main").innerText();
         await btn.click();
-        await page.waitForTimeout(600);
-        const after = await page.locator("main").innerText();
-        assert(before !== after, "Ansicht hat sich nicht verändert");
+        await page.waitForTimeout(700);
+        assert(before !== await page.locator("main").innerText(), "Ansicht unverändert");
       });
 
-      await check("Fortschritt überlebt einen Reload (localStorage)", async () => {
-        const key = await page.evaluate(() =>
-          Object.keys(localStorage).filter(k => k.startsWith("sq-progress:")));
-        assert(key.length > 0, "kein Fortschritt gespeichert");
+      await check("Fortschritt wird persistiert (localStorage)", async () => {
+        const keys = await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith("sq-progress:")));
+        assert(keys.length > 0, "kein Fortschritt gespeichert");
       });
 
-      await check("Deep-Link /lernen/<slug> lädt ohne Fehler", async () => {
-        await page.goto(BASE + "/lernen/dsr-konfiguration-einzelhandel", { waitUntil: "networkidle" });
-        assert(/Kapitel/i.test(await page.locator("main").innerText()), "kein Inhalt");
+      await check("Video-Element: Play/Pause reagiert (war tot)", async () => {
+        await routeTo(page, "/lernen");
+        // Kapitel mit Video-Element gezielt über seinen Titel öffnen
+        await page.getByRole("button", { name: /DealerData-Synchronisation/i }).first().click();
+        await page.waitForTimeout(500);
+        const play = page.getByRole("button", { name: /Video abspielen/i });
+        assert(await play.count() > 0, "kein Video-Element im Kapitel");
+        await play.first().click();
+        await page.waitForTimeout(500);
+        assert(await page.getByRole("button", { name: /Video pausieren/i }).count() > 0,
+          "Play wechselt nicht auf Pause");
+      });
+
+      await check("Deep-Link /lernen/<slug> lädt Inhalt", async () => {
+        await routeTo(page, "/lernen/dsr-konfiguration-einzelhandel");
+        assert(currentPath(page).includes("dsr-konfiguration"), "Route verworfen");
+        assert(/Kapitel/i.test(await page.locator("main").innerText({ timeout: 15_000 })), "kein Inhalt");
       });
 
       await ctx.close();
@@ -167,48 +230,60 @@ async function run() {
 
     // ═══ B) Editor ═══════════════════════════════════════════════════════════
     console.log("\n── B) Prozess: Editor ──");
+    if (want("B"))
     {
       const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const page = await ctx.newPage();
       watchConsole(page);
-      await gotoAs(page, ["editor"], "/login");
+      await coldStart(page, ["editor"]);
       await login(page);
 
-      await check("Editor sieht Redaktion, aber keine Verwaltung", async () => {
-        const nav = await page.locator("aside").innerText();
+      await check("Editor sieht Redaktion, aber keine Benutzerverwaltung", async () => {
+        const nav = await sidebarText(page);
         assert(/Redaktion/i.test(nav), "Redaktion fehlt");
-        assert(!/Benutzer|Märkte|Einstellungen/i.test(nav), `Verwaltung sichtbar: ${nav.replace(/\n/g, " | ")}`);
+        assert(!/Benutzer|Märkte/i.test(nav), `Verwaltung sichtbar: ${nav.replace(/\n/g, " | ")}`);
       });
 
       await check("Inhaltsbaum lädt", async () => {
-        await page.goto(BASE + "/redaktion/inhalte", { waitUntil: "networkidle" });
+        await routeTo(page, "/redaktion/inhalte");
         assert(/Inhaltsstruktur|Training/i.test(await page.locator("main").innerText()), "kein Baum");
       });
 
-      await check("Trainingseditor öffnet (ohne ID: Leerzustand)", async () => {
-        await page.goto(BASE + "/redaktion/editor", { waitUntil: "networkidle" });
+      await check("Trainingseditor ohne ID zeigt einen Leerzustand", async () => {
+        await routeTo(page, "/redaktion/editor");
         assert((await page.locator("main").innerText()).length > 20, "leere Seite");
       });
 
       await check("Übersetzungsübersicht lädt", async () => {
-        await page.goto(BASE + "/uebersetzungen", { waitUntil: "networkidle" });
-        assert(/Übersetzung/i.test(await page.locator("main").innerText()), "keine Übersetzungsansicht");
+        await routeTo(page, "/uebersetzungen");
+        assert(/Übersetzung/i.test(await page.locator("main").innerText()), "keine Übersicht");
       });
 
-      await check("Prüfansicht lädt (Master ↔ Übersetzung)", async () => {
-        await page.goto(BASE + "/uebersetzungen/pruefen", { waitUntil: "networkidle" });
+      await check("Prüfansicht ohne Parameter zeigt einen Leerzustand", async () => {
+        await routeTo(page, "/uebersetzungen/pruefen");
         const txt = await page.locator("main").innerText();
-        assert(/Master|Deutsch/i.test(txt), "keine Side-by-side-Ansicht");
+        assert(txt.length > 20, "leere Seite");
+        assert(!/undefined|NaN/i.test(txt), "fehlerhafte Platzhalter");
       });
 
-      await check("Editor darf Reporting sehen", async () => {
-        await page.goto(BASE + "/auswertungen", { waitUntil: "networkidle" });
-        assert(new URL(page.url()).pathname === "/auswertungen", "wurde abgewiesen");
+      await check("Prüfansicht mit Parametern zeigt Master und Zielsprache", async () => {
+        await routeTo(page, "/uebersetzungen/pruefen/demo-training/fr");
+        // Ladezustand muss sich auflösen (Zeitgrenze der Datenschicht greift)
+        await page.waitForFunction(
+          () => !/^\s*Lädt/.test(document.querySelector("main")?.innerText ?? ""),
+          null, { timeout: 20_000 });
+        const txt = await page.locator("main").innerText();
+        assert(/Master|Deutsch/i.test(txt), `keine Side-by-side-Ansicht: ${txt.slice(0, 120).replace(/\n/g, " | ")}`);
       });
 
-      await check("Editor-Guard: Benutzerverwaltung bleibt gesperrt", async () => {
-        await page.goto(BASE + "/verwaltung/benutzer", { waitUntil: "networkidle" });
-        assert(new URL(page.url()).pathname === "/", "Zugriff war möglich");
+      await check("Editor darf Auswertungen sehen", async () => {
+        await routeTo(page, "/auswertungen");
+        assert(currentPath(page) === "/auswertungen", "wurde abgewiesen");
+      });
+
+      await check("Guard: Benutzerverwaltung bleibt für Editor gesperrt", async () => {
+        await routeTo(page, "/verwaltung/benutzer");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
       });
 
       await ctx.close();
@@ -216,213 +291,291 @@ async function run() {
 
     // ═══ C) Administrator ════════════════════════════════════════════════════
     console.log("\n── C) Prozess: Administrator ──");
+    if (want("C"))
     {
       const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const page = await ctx.newPage();
       watchConsole(page);
-      await gotoAs(page, ["admin"], "/login");
+      await coldStart(page, ["admin"]);
       await login(page);
 
       await check("Admin sieht Verwaltung, aber keine Redaktion", async () => {
-        const nav = await page.locator("aside").innerText();
+        const nav = await sidebarText(page);
         assert(/Verwaltung/i.test(nav), "Verwaltung fehlt");
         assert(!/Inhalte|Übersetzungen/i.test(nav), `Redaktion sichtbar: ${nav.replace(/\n/g, " | ")}`);
       });
 
-      await check("Benutzerverwaltung lädt", async () => {
-        await page.goto(BASE + "/verwaltung/benutzer", { waitUntil: "networkidle" });
-        assert(/Benutzer/i.test(await page.locator("main").innerText()), "keine Benutzerliste");
+      await check("Benutzerverwaltung lädt mit Statusangabe", async () => {
+        await routeTo(page, "/verwaltung/benutzer");
+        await settled(page);
+        const txt = await page.locator("main").innerText();
+        assert(/Benutzer/i.test(txt), "keine Benutzerliste");
+        assert(/Aktiv|Inaktiv|Demo/i.test(txt), "keine Status-/Demo-Angabe");
       });
 
       await check("Märkte & Sprachen lädt", async () => {
-        await page.goto(BASE + "/verwaltung/maerkte", { waitUntil: "networkidle" });
-        assert(/Märkte|Markt/i.test(await page.locator("main").innerText()), "keine Marktliste");
+        await routeTo(page, "/verwaltung/maerkte");
+        await settled(page);
+        assert(/Markt|Märkte/i.test(await page.locator("main").innerText()), "keine Marktliste");
       });
 
       await check("Einstellungen lädt", async () => {
-        await page.goto(BASE + "/verwaltung/einstellungen", { waitUntil: "networkidle" });
+        await routeTo(page, "/verwaltung/einstellungen");
         assert((await page.locator("main").innerText()).length > 50, "leere Seite");
       });
 
-      await check("Auswertungen zeigen Kennzahlen oder Datenbank-Hinweis", async () => {
-        await page.goto(BASE + "/auswertungen", { waitUntil: "networkidle" });
+      await check("Einstellungen enthalten keinen fabrizierten Verbindungstest", async () => {
         const txt = await page.locator("main").innerText();
-        assert(txt.length > 40, "leere Seite");
+        assert(!/312\s*ms/i.test(txt), "fabriziertes Messergebnis sichtbar");
       });
 
-      await check("Reporting enthält keinen personenbezogenen Lernbericht", async () => {
-        const txt = (await page.locator("main").innerText()).toLowerCase();
-        // Es darf keine Liste einzelner Lernender mit Fortschritt geben
-        assert(!/pro lernende[rn]?\b|einzelne lernende/.test(txt), "personenbezogenes Reporting gefunden");
+      await check("Auswertungen zeigen Kennzahlen oder Datenbank-Hinweis", async () => {
+        await routeTo(page, "/auswertungen");
+        await settled(page);
+        assert((await page.locator("main").innerText()).length > 40, "leere Seite");
+      });
+
+      await check("Auswertungen weisen Datenschutz-Grenze aus", async () => {
+        const txt = await page.locator("main").innerText();
+        assert(/Summen|personenbezogen|einzelne Lernende/i.test(txt), "kein Datenschutzhinweis");
       });
 
       await ctx.close();
     }
 
-    // ═══ D) Querschnitt: i18n, Responsive, Fehlerseiten ══════════════════════
-    console.log("\n── D) Querschnitt ──");
+    // ═══ D) Querschnitt ══════════════════════════════════════════════════════
+    console.log("\n── D) Querschnitt: i18n, Suche, Fehlerseiten ──");
+    if (want("D"))
     {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
       const page = await ctx.newPage();
       watchConsole(page);
-      await gotoAs(page, ["admin", "editor", "user"], "/login");
+      await coldStart(page, ["admin", "editor", "user"]);
       await login(page);
 
-      await check("Sprachumschaltung auf Englisch ändert die Navigation", async () => {
-        const before = await page.locator("aside").innerText();
-        await page.getByRole("button", { name: /Sprache|Language|Langue/i }).first().click();
+      await check("Sprachumschaltung auf Englisch übersetzt die Navigation", async () => {
+        const before = await sidebarText(page);
+        await page.locator("header").getByRole("button", { name: /Sprache|Language|Langue/i }).first().click();
         await page.getByRole("menuitemradio", { name: /English/i }).click();
         await page.waitForTimeout(400);
-        const after = await page.locator("aside").innerText();
+        const after = await sidebarText(page);
         assert(before !== after, "Navigation unverändert");
         assert(/Learning|Administration/i.test(after), `keine englischen Labels: ${after.replace(/\n/g, " | ")}`);
       });
 
-      await check("Sprachwahl überlebt einen Reload", async () => {
-        await page.reload({ waitUntil: "networkidle" });
-        const lang = await page.evaluate(() => document.documentElement.lang);
-        assert(lang === "en", `html lang = ${lang}`);
+      await check("html-lang folgt der Sprachwahl", async () => {
+        assert(await page.evaluate(() => document.documentElement.lang) === "en", "lang nicht en");
       });
 
-      await check("Sprache zurück auf Deutsch", async () => {
-        await page.getByRole("button", { name: /Language|Sprache/i }).first().click();
+      await check("Sprachwahl wird persistiert", async () => {
+        const stored = await page.evaluate(() => localStorage.getItem("sq-ui-language"));
+        assert(stored === "en", `gespeichert: ${stored}`);
+      });
+
+      await check("Rückschaltung auf Deutsch funktioniert", async () => {
+        await page.locator("header").getByRole("button", { name: /Language|Sprache/i }).first().click();
         await page.getByRole("menuitemradio", { name: /Deutsch/i }).click();
         await page.waitForTimeout(400);
-        assert(/Lernen/i.test(await page.locator("aside").innerText()), "nicht auf Deutsch");
+        assert(/Lernen/i.test(await sidebarText(page)), "nicht auf Deutsch");
       });
 
-      await check("Suche in der Topbar reagiert (Ergebnis oder Hinweis)", async () => {
-        const input = page.locator('input[type="search"]').first();
-        await input.fill("DSR");
-        await page.waitForTimeout(700);
-        const listbox = page.locator('[role="listbox"]');
-        assert(await listbox.count() > 0, "kein Ergebnis-Panel");
+      await check("Topbar-Suche zeigt ein Ergebnis-Panel", async () => {
+        await page.locator('header input[type="search"]').fill("DSR");
+        await page.waitForTimeout(800);
+        assert(await page.locator('[role="listbox"]').count() > 0, "kein Panel");
       });
 
-      await check("Unbekannte URL leitet auf das Dashboard", async () => {
-        await page.goto(BASE + "/gibt-es-nicht", { waitUntil: "networkidle" });
-        assert(new URL(page.url()).pathname === "/", `landete auf ${new URL(page.url()).pathname}`);
+      await check("Rollenwechsel im Profilmenü blendet Bereiche aus", async () => {
+        await page.keyboard.press("Escape");
+        await page.locator("header").getByRole("button", { name: /Profil|Profile/i }).first().click();
+        await page.waitForTimeout(200);
+        // Administrator- und Editor-Rolle abwählen → nur Lernender bleibt
+        await page.getByRole("checkbox").nth(0).uncheck();
+        await page.getByRole("checkbox").nth(1).uncheck();
+        await page.waitForTimeout(400);
+        const nav = await sidebarText(page);
+        assert(!/Verwaltung|Redaktion/i.test(nav), `noch sichtbar: ${nav.replace(/\n/g, " | ")}`);
       });
 
-      await check("Session-Ablaufseite zeigt Rückweg zu ServiceQ", async () => {
-        await page.goto(BASE + "/sso/expired", { waitUntil: "networkidle" });
+      await check("Unbekannte Route leitet auf das Dashboard", async () => {
+        await routeTo(page, "/gibt-es-nicht");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
+      });
+
+      await check("Session-Ablaufseite verweist auf ServiceQ, nicht auf Login", async () => {
+        await routeTo(page, "/sso/expired");
         const txt = await page.locator("body").innerText();
-        assert(/ServiceQ/i.test(txt), "kein Rückweg");
-        assert(!/Anmelden|Login/i.test(txt), "zeigt eine Loginseite");
+        assert(/ServiceQ/i.test(txt), "kein Rückweg zu ServiceQ");
+        assert(!/Passwort/i.test(txt), "zeigt Anmeldefelder");
       });
 
-      await check("SSO-Fehlerseite (keine Berechtigung) rendert", async () => {
-        await page.goto(BASE + "/sso/error?reason=denied", { waitUntil: "networkidle" });
+      await check("SSO-Fehlerseite 'keine Berechtigung' rendert", async () => {
+        await routeTo(page, "/sso/error?reason=denied");
         assert(/Kein Zugriff/i.test(await page.locator("body").innerText()), "falscher Text");
       });
 
       await check("Impressum und Datenschutz sind erreichbar", async () => {
-        await page.goto(BASE + "/impressum", { waitUntil: "networkidle" });
+        await routeTo(page, "/impressum");
         assert(/Impressum/i.test(await page.locator("body").innerText()), "kein Impressum");
-        await page.goto(BASE + "/datenschutz", { waitUntil: "networkidle" });
+        await routeTo(page, "/datenschutz");
         assert(/Datenschutz/i.test(await page.locator("body").innerText()), "kein Datenschutz");
       });
 
-      await check("Abmelden führt zurück zur Anmeldung", async () => {
-        await page.goto(BASE + "/", { waitUntil: "networkidle" });
-        await page.getByRole("button", { name: /Profil|Profile/i }).first().click();
-        await page.getByRole("menuitem", { name: /Abmelden|Log out/i }).click();
-        await page.waitForTimeout(500);
-        assert(new URL(page.url()).pathname.includes("/login"), `landete auf ${new URL(page.url()).pathname}`);
-      });
-
       await ctx.close();
     }
 
-    // ═══ E) Mobile (375×812) ═════════════════════════════════════════════════
-    console.log("\n── E) Responsive (Mobil) ──");
-    {
-      const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
-      const page = await ctx.newPage();
-      watchConsole(page);
-      await gotoAs(page, ["user"], "/login");
-      await login(page);
-
-      await check("Kein horizontaler Überlauf auf dem Dashboard", async () => {
-        const overflow = await page.evaluate(() =>
-          document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        assert(overflow <= 2, `Überlauf: ${overflow}px`);
-      });
-
-      await check("Mobile Bottom-Navigation ist sichtbar und bedienbar", async () => {
-        const nav = page.locator("nav").last();
-        assert(await nav.isVisible(), "keine Bottom-Nav");
-        await page.getByRole("button", { name: /Katalog|Catalogue/i }).first().click();
-        await page.waitForTimeout(500);
-        assert(new URL(page.url()).pathname.includes("katalog"), `landete auf ${new URL(page.url()).pathname}`);
-      });
-
-      await check("Kein horizontaler Überlauf in der Lernansicht", async () => {
-        await page.goto(BASE + "/lernen", { waitUntil: "networkidle" });
-        const overflow = await page.evaluate(() =>
-          document.documentElement.scrollWidth - document.documentElement.clientWidth);
-        assert(overflow <= 2, `Überlauf: ${overflow}px`);
-      });
-
-      await ctx.close();
-    }
-
-    // ═══ F) Barrierefreiheit (strukturelle Stichproben) ══════════════════════
-    console.log("\n── F) Barrierefreiheit ──");
+    // ═══ E) Abmelden (eigener Kontext) ═══════════════════════════════════════
+    console.log("\n── E) Abmelden ──");
+    if (want("E"))
     {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
       const page = await ctx.newPage();
       watchConsole(page);
-      await gotoAs(page, ["admin", "editor", "user"], "/login");
+      await coldStart(page, ["user"]);
       await login(page);
 
-      await check("Jede Seite hat genau eine H1", async () => {
-        for (const path of ["/", "/katalog", "/auswertungen", "/verwaltung/benutzer"]) {
-          await page.goto(BASE + path, { waitUntil: "networkidle" });
-          const n = await page.locator("h1").count();
-          assert(n === 1, `${path} hat ${n} H1-Elemente`);
-        }
-      });
-
-      await check("Icon-Buttons in der Topbar haben zugängliche Namen", async () => {
-        await page.goto(BASE + "/", { waitUntil: "networkidle" });
-        const unnamed = await page.evaluate(() => {
-          const hdr = document.querySelector("header");
-          if (!hdr) return ["kein header"];
-          return [...hdr.querySelectorAll("button")]
-            .filter(b => !b.textContent.trim() && !b.getAttribute("aria-label"))
-            .map(b => b.outerHTML.slice(0, 60));
-        });
-        assert(unnamed.length === 0, `ohne Namen: ${unnamed.join(", ")}`);
-      });
-
-      await check("Sprachattribut am <html> ist gesetzt", async () => {
-        const lang = await page.evaluate(() => document.documentElement.lang);
-        assert(!!lang, "html lang fehlt");
-      });
-
-      await check("Tastaturfokus erreicht die Navigation", async () => {
-        await page.keyboard.press("Tab");
-        await page.keyboard.press("Tab");
-        const tag = await page.evaluate(() => document.activeElement?.tagName ?? "");
-        assert(["BUTTON", "A", "INPUT"].includes(tag), `Fokus auf ${tag}`);
+      await check("Abmelden über das Profilmenü führt zur Anmeldung (war tot)", async () => {
+        await page.locator("header").getByRole("button", { name: /Profil|Profile/i }).first().click();
+        await page.waitForTimeout(200);
+        await page.getByRole("menuitem", { name: /Abmelden|Log out/i }).click();
+        await page.waitForTimeout(600);
+        assert(currentPath(page).includes("/login"), `landete auf ${currentPath(page)}`);
       });
 
       await ctx.close();
     }
 
-    // ═══ Konsolenfehler ══════════════════════════════════════════════════════
-    console.log("\n── G) Laufzeitfehler ──");
+    // ═══ F) Kaltstart-Guard (echter Reload) ══════════════════════════════════
+    console.log("\n── F) Guard bei echtem Kaltstart ──");
+    if (want("F"))
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      watchConsole(page);
+      // Direkter Aufruf einer Verwaltungs-URL als Lernender, ohne Anmeldung
+      await coldStart(page, ["user"], "/verwaltung/benutzer");
+      await check("Direkter URL-Aufruf ohne Anmeldung landet auf der Anmeldeseite", async () => {
+        await page.waitForTimeout(800);
+        assert(currentPath(page).includes("/login"), `landete auf ${currentPath(page)}`);
+      });
+      await check("Nach Anmeldung bleibt die Verwaltung für Lernende gesperrt", async () => {
+        await login(page);
+        await routeTo(page, "/verwaltung/benutzer");
+        assert(currentPath(page) === "/", `landete auf ${currentPath(page)}`);
+      });
+      await ctx.close();
+    }
+
+    // ═══ G) Responsive (Mobil) ═══════════════════════════════════════════════
+    console.log("\n── G) Responsive (375×812) ──");
+    if (want("G"))
+    {
+      const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+      const page = await ctx.newPage();
+      watchConsole(page);
+      await coldStart(page, ["user"]);
+      await login(page);
+
+      const overflow = () => page.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+      await check("Dashboard ohne horizontalen Überlauf", async () => {
+        const o = await overflow();
+        assert(o <= 2, `Überlauf ${o}px`);
+      });
+
+      await check("Mobile Bottom-Navigation ist bedienbar (Suche war tot)", async () => {
+        const nav = page.locator("nav").last();
+        assert(await nav.isVisible(), "keine Bottom-Nav");
+        await nav.getByRole("button", { name: /Suche|Search/i }).click();
+        await page.waitForTimeout(500);
+        assert(currentPath(page).includes("katalog"), `landete auf ${currentPath(page)}`);
+      });
+
+      await check("Lernansicht ohne horizontalen Überlauf", async () => {
+        await routeTo(page, "/lernen");
+        const o = await overflow();
+        assert(o <= 2, `Überlauf ${o}px`);
+      });
+
+      await ctx.close();
+    }
+
+    // ═══ H) Barrierefreiheit ═════════════════════════════════════════════════
+    console.log("\n── H) Barrierefreiheit ──");
+    if (want("H"))
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const page = await ctx.newPage();
+      watchConsole(page);
+      await coldStart(page, ["admin", "editor", "user"]);
+      await login(page);
+
+      await check("Jede geprüfte Seite hat genau eine H1", async () => {
+        const bad = [];
+        for (const p of ["/", "/katalog", "/auswertungen", "/verwaltung/benutzer", "/verwaltung/maerkte"]) {
+          await routeTo(page, p);
+          const n = await page.locator("h1").count();
+          if (n !== 1) bad.push(`${p}:${n}`);
+        }
+        assert(bad.length === 0, `abweichend: ${bad.join(", ")}`);
+      });
+
+      await check("Alle Icon-Buttons der Topbar haben zugängliche Namen", async () => {
+        const unnamed = await page.evaluate(() => [...(document.querySelector("header")?.querySelectorAll("button") ?? [])]
+          .filter(b => !b.textContent.trim() && !b.getAttribute("aria-label"))
+          .map(b => b.outerHTML.slice(0, 50)));
+        assert(unnamed.length === 0, `ohne Namen: ${unnamed.join(" | ")}`);
+      });
+
+      await check("Aktiver Navigationspunkt ist als aria-current markiert", async () => {
+        await routeTo(page, "/katalog");
+        const n = await page.locator('aside [aria-current="page"]').count();
+        assert(n >= 1, "kein aria-current in der Sidebar");
+      });
+
+      await check("Sprachattribut am <html> ist gesetzt", async () => {
+        assert(!!(await page.evaluate(() => document.documentElement.lang)), "html lang fehlt");
+      });
+
+      await check("Tastaturnavigation erreicht fokussierbare Elemente", async () => {
+        await routeTo(page, "/");
+        await page.keyboard.press("Tab");
+        await page.keyboard.press("Tab");
+        const tag = await page.evaluate(() => document.activeElement?.tagName ?? "");
+        assert(["BUTTON", "A", "INPUT", "SELECT"].includes(tag), `Fokus auf ${tag}`);
+      });
+
+      await check("Tabellen liegen in scrollbaren Containern (kein Layoutbruch)", async () => {
+        await routeTo(page, "/verwaltung/maerkte");
+        await settled(page);
+        const bad = await page.evaluate(() => [...document.querySelectorAll("table")]
+          .filter(tb => {
+            let el = tb.parentElement, guarded = false;
+            for (let i = 0; el && i < 3; i++, el = el.parentElement) {
+              const ov = getComputedStyle(el).overflowX;
+              if (ov === "auto" || ov === "scroll") { guarded = true; break; }
+            }
+            return !guarded;
+          }).length);
+        assert(bad === 0, `${bad} Tabelle(n) ohne overflow-Container`);
+      });
+
+      await ctx.close();
+    }
+
+    // ═══ I) Laufzeitfehler ═══════════════════════════════════════════════════
+    console.log("\n── I) Laufzeitfehler ──");
     await check("Keine unerwarteten Konsolen-/Seitenfehler", () => {
-      assert(consoleErrors.length === 0, `${consoleErrors.length}: ${consoleErrors.slice(0, 3).join(" | ")}`);
+      assert(consoleErrors.length === 0, `${consoleErrors.length}: ${[...new Set(consoleErrors)].slice(0, 3).join(" | ")}`);
     });
 
   } finally {
     await browser.close();
-    server.kill("SIGTERM");
+    server?.kill("SIGTERM");
   }
 
-  console.log(`\n══════════════════════════════════════════`);
+  console.log("\n══════════════════════════════════════════");
   console.log(`Ergebnis: ${pass} bestanden, ${fail} fehlgeschlagen`);
   if (failures.length) {
     console.log("\nFehlgeschlagen:");

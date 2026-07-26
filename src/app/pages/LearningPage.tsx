@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import {
   ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, Download, Eye,
-  ExternalLink, Globe, Play,
+  ExternalLink, Globe, Pause, Play,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ProgressBar } from "../components/ProgressBar";
@@ -12,6 +12,7 @@ import {
   fetchLearningTraining, fetchTranslationMap,
   type LearningChapter, type LearningElement, type LearningTraining, type TranslationMap,
 } from "../data/api";
+import { useT } from "../i18n";
 
 // Deep-Link-Ziel: der Consume-Redirect landet auf /lernen/<slug>; ohne Slug
 // wird das Standard-Training geladen ("Weiterlernen"-Einstieg).
@@ -61,10 +62,87 @@ const LEARN_LANGUAGES = [
 
 /** Kennzeichnung "🌐 Original", wenn der Master-Text angezeigt wird (Konzept §5). */
 function OriginalChip() {
+  const { t } = useT();
   return (
     <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 rounded-full bg-[#EEF1F4] text-[#5A6472] text-[10px] font-medium align-middle whitespace-nowrap">
-      <Globe size={9} /> Original
+      <Globe size={9} aria-hidden /> {t("learn.original")}
     </span>
+  );
+}
+
+// ─── Video-Element (Prototyp-Player) ─────────────────────────────────────────
+
+const TICK_MS = 200; // Auflösung der simulierten Wiedergabe
+
+/** "6:42" → 402 Sekunden. Ohne verwertbare Angabe: 120 s als Standardlänge. */
+function parseDurationSeconds(raw: unknown): number {
+  if (typeof raw === "string" && raw.trim()) {
+    const parts = raw.trim().split(":").map(n => Number.parseInt(n, 10));
+    if (parts.length > 0 && parts.every(n => Number.isFinite(n))) {
+      const seconds = parts.reduce((total, n) => total * 60 + n, 0);
+      if (seconds > 0) return seconds;
+    }
+  }
+  return 120;
+}
+
+/**
+ * Rein visueller Player für den Prototyp: Es existiert noch keine echte
+ * Videodatei, deshalb simulieren "Abspielen/Pause" und der Fortschrittsbalken
+ * die Wiedergabe lokal im Komponentenstate (statt eines toten Buttons).
+ */
+function VideoElement({ element, tr }: {
+  element: LearningElement;
+  tr: (refId: string, field: string, master: string | undefined) => { text: string; original: boolean };
+}) {
+  const p = element.payload ?? {};
+  const title = tr(element.id, "title", p.title);
+  const totalSeconds = parseDurationSeconds(p.duration);
+  const [playing, setPlaying] = useState(false);
+  const [percent, setPercent] = useState(0);
+
+  useEffect(() => {
+    if (!playing) return;
+    const step = (TICK_MS / 1000 / totalSeconds) * 100;
+    const id = setInterval(() => setPercent(prev => Math.min(100, prev + step)), TICK_MS);
+    return () => clearInterval(id);
+  }, [playing, totalSeconds]);
+
+  // Ende erreicht: Wiedergabe stoppt, ein weiterer Klick startet von vorn.
+  useEffect(() => {
+    if (percent >= 100) setPlaying(false);
+  }, [percent]);
+
+  const toggle = () => {
+    if (!playing && percent >= 100) setPercent(0);
+    setPlaying(!playing);
+  };
+
+  return (
+    <div className="bg-[#2E3540] rounded-lg overflow-hidden mb-6 aspect-video flex items-center justify-center relative">
+      <div className="absolute inset-0 bg-gradient-to-br from-[#232830] to-[#3A424E]" />
+      <div className="relative flex flex-col items-center gap-3 px-4 text-center">
+        <button onClick={toggle} aria-pressed={playing}
+          aria-label={playing ? "Video pausieren" : "Video abspielen"}
+          className="w-16 h-16 rounded-full flex items-center justify-center transition-all hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
+          style={{ backgroundColor: "#00C8C1" }}>
+          {playing
+            ? <Pause size={24} fill="#232830" color="#232830" aria-hidden />
+            : <Play size={24} fill="#232830" color="#232830" className="ml-1" aria-hidden />}
+        </button>
+        <span className="text-white/80 text-[14px]">
+          {title.text}{p.duration ? ` (${p.duration})` : ""}
+          {title.original && <OriginalChip />}
+        </span>
+      </div>
+      <div className="absolute bottom-0 left-0 right-0 px-4 pb-3 pt-6 bg-gradient-to-t from-black/60">
+        <div className="h-1 bg-white/20 rounded-full" role="progressbar"
+          aria-label="Wiedergabefortschritt" aria-valuemin={0} aria-valuemax={100}
+          aria-valuenow={Math.round(percent)} aria-valuetext={`${Math.round(percent)}%`}>
+          <div className="h-full bg-[#00C8C1] rounded-full transition-[width] duration-200 ease-linear" style={{ width: `${percent}%` }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -76,27 +154,8 @@ function ElementView({ element, tr }: {
 }) {
   const p = element.payload ?? {};
   switch (element.type) {
-    case "video": {
-      const title = tr(element.id, "title", p.title);
-      return (
-        <div className="bg-[#2E3540] rounded-lg overflow-hidden mb-6 aspect-video flex items-center justify-center relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#232830] to-[#3A424E]" />
-          <div className="relative flex flex-col items-center gap-3 px-4 text-center">
-            <button className="w-16 h-16 rounded-full flex items-center justify-center transition-all hover:scale-105"
-              style={{ backgroundColor: "#00C8C1" }} aria-label="Video abspielen">
-              <Play size={24} fill="#232830" color="#232830" className="ml-1" />
-            </button>
-            <span className="text-white/80 text-[14px]">
-              {title.text}{p.duration ? ` (${p.duration})` : ""}
-              {title.original && <OriginalChip />}
-            </span>
-          </div>
-          <div className="absolute bottom-0 left-0 right-0 px-4 pb-3 pt-6 bg-gradient-to-t from-black/60">
-            <div className="h-1 bg-white/20 rounded-full"><div className="h-full w-0 bg-[#00C8C1] rounded-full" /></div>
-          </div>
-        </div>
-      );
-    }
+    case "video":
+      return <VideoElement element={element} tr={tr} />;
     case "text": {
       const body = tr(element.id, "body", p.body);
       return (
@@ -139,7 +198,7 @@ function ElementView({ element, tr }: {
         <div className="mb-8">
           <div className="rounded-lg border border-[#C3C9D1] overflow-hidden bg-[#EEF1F4] aspect-[16/7] flex items-center justify-center">
             <div className="text-center text-[#8A93A0]">
-              <div className="w-12 h-12 bg-[#C3C9D1] rounded-lg mx-auto mb-2 flex items-center justify-center"><Eye size={20} /></div>
+              <div className="w-12 h-12 bg-[#C3C9D1] rounded-lg mx-auto mb-2 flex items-center justify-center"><Eye size={20} aria-hidden /></div>
               <p className="text-[13px]">Screenshot</p>
             </div>
           </div>
@@ -153,10 +212,20 @@ function ElementView({ element, tr }: {
     }
     case "document": {
       const label = tr(element.id, "label", p.label ?? "Dokument");
+      const url = typeof p.url === "string" ? p.url.trim() : "";
+      const openDocument = () => {
+        if (url) {
+          window.open(url, "_blank", "noopener,noreferrer");
+          return;
+        }
+        // Prototyp: Redaktion hat noch keine Datei am Element hinterlegt.
+        toast.info("Für dieses Element ist noch keine Datei hinterlegt.");
+      };
       return (
-        <button className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all text-left">
+        <button onClick={openDocument} aria-label={label.text}
+          className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
           <div className="w-10 h-10 rounded-lg bg-[#E6FAF9] flex items-center justify-center shrink-0">
-            <Download size={18} style={{ color: "#009D97" }} />
+            <Download size={18} style={{ color: "#009D97" }} aria-hidden />
           </div>
           <span className="text-[14px] font-semibold text-[#232830]">{label.text}{label.original && <OriginalChip />}</span>
         </button>
@@ -166,9 +235,9 @@ function ElementView({ element, tr }: {
       const label = tr(element.id, "label", p.label ?? p.url);
       return (
         <a href={p.url} target="_blank" rel="noreferrer"
-          className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all">
+          className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
           <div className="w-10 h-10 rounded-lg bg-[#E6FAF9] flex items-center justify-center shrink-0">
-            <ExternalLink size={18} style={{ color: "#009D97" }} />
+            <ExternalLink size={18} style={{ color: "#009D97" }} aria-hidden />
           </div>
           <span className="text-[14px] font-semibold text-[#007D78]">{label.text}{label.original && <OriginalChip />}</span>
         </a>
@@ -185,6 +254,7 @@ function CompletionScreen({ title, chapterCount, elementCount, duration, onBack,
   title: string; chapterCount: number; elementCount: number; duration: string;
   onBack: () => void; onNext: () => void;
 }) {
+  const { t } = useT();
   return (
     <div className="flex-1 flex items-center justify-center p-6 bg-[#F6F8FA]">
       <div className="max-w-[520px] w-full text-center">
@@ -204,16 +274,16 @@ function CompletionScreen({ title, chapterCount, elementCount, duration, onBack,
         </div>
 
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EAF8F0] text-[#15803D] text-[12px] font-semibold mb-4">
-          <CheckCircle2 size={13} /> Abgeschlossen
+          <CheckCircle2 size={13} aria-hidden /> {t("learn.status.done")}
         </div>
 
-        <h1 className="text-[26px] font-semibold text-[#232830] leading-tight mb-2">Training abgeschlossen</h1>
+        <h1 className="text-[26px] font-semibold text-[#232830] leading-tight mb-2">{t("learn.trainingDone")}</h1>
         <p className="text-[16px] text-[#5A6472] mb-2">{title}</p>
         <p className="text-[14px] text-[#8A93A0] mb-10">Alle {chapterCount} Kapitel wurden erfolgreich durchgearbeitet.</p>
 
         <div className="bg-white rounded-xl border border-[#C3C9D1] p-5 mb-8 text-left grid grid-cols-3 gap-4 shadow-sm">
           {[
-            { label: "Kapitel", value: `${chapterCount}/${chapterCount}` },
+            { label: t("learn.chapters"), value: `${chapterCount}/${chapterCount}` },
             { label: "Elemente", value: `${elementCount}` },
             { label: "Dauer", value: duration },
           ].map(s => (
@@ -226,11 +296,11 @@ function CompletionScreen({ title, chapterCount, elementCount, duration, onBack,
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <button onClick={onBack}
-            className="px-6 py-2.5 rounded-lg border border-[#C3C9D1] text-[14px] font-semibold text-[#3A424E] hover:bg-[#EEF1F4] transition-colors">
+            className="px-6 py-2.5 rounded-lg border border-[#C3C9D1] text-[14px] font-semibold text-[#3A424E] hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
             Zur Modulübersicht
           </button>
           <button onClick={onNext}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-[15px] transition-all"
+            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-[15px] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
             style={{ backgroundColor: "#00C8C1", color: "#232830" }}
             onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#00B3AC")}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#00C8C1")}
@@ -265,6 +335,7 @@ function saveProgress(trainingId: string, done: Set<string>) {
 }
 
 export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }) {
+  const { t } = useT();
   const { slug } = useParams();
   const activeSlug = slug ?? DEFAULT_SLUG;
   const [training, setTraining] = useState<LearningTraining>(FALLBACK_TRAINING);
@@ -333,14 +404,15 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
     const updated = new Set(chapterDone).add(chapter.id);
     setChapterDone(updated);
     saveProgress(training.id, updated);
+    const doneMessage = `${t("learn.chapter")} ${activeIdx + 1} ${t("learn.completed")}`;
     const nextIdx = chapters.findIndex((c, i) => i > activeIdx && !updated.has(c.id));
     if (nextIdx !== -1) {
       setActiveIdx(nextIdx);
-      toast.success(`Kapitel ${activeIdx + 1} abgeschlossen`);
+      toast.success(doneMessage);
     } else if (updated.size >= chapters.length) {
       setShowCompletion(true);
     } else {
-      toast.success(`Kapitel ${activeIdx + 1} abgeschlossen`);
+      toast.success(doneMessage);
     }
   };
 
@@ -366,22 +438,23 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
       {/* Chapter sidebar */}
       <div className={`bg-white border-r border-[#E1E5EA] flex-col transition-all duration-200 hidden lg:flex ${chapterListOpen ? "w-64" : "w-0 overflow-hidden"}`}>
         <div className="p-4 border-b border-[#EEF1F4]">
-          <div className="text-[11px] font-bold text-[#5A6472] uppercase tracking-wider mb-1">Kapitel</div>
+          <div className="text-[11px] font-bold text-[#5A6472] uppercase tracking-wider mb-1">{t("learn.chapters")}</div>
           <ProgressBar percent={progress} className="mt-2" />
-          <div className="text-[12px] text-[#5A6472] mt-1">{chapterDone.size}/{chapters.length} abgeschlossen</div>
+          <div className="text-[12px] text-[#5A6472] mt-1">{chapterDone.size}/{chapters.length} {t("learn.completed")}</div>
         </div>
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav className="flex-1 overflow-y-auto py-2" aria-label={t("learn.chapters")}>
           {chapters.map((ch, i) => {
-            const t = trChapter(ch.id, "title", ch.title);
+            const chTitle = trChapter(ch.id, "title", ch.title);
             return (
               <button key={ch.id} onClick={() => setActiveIdx(i)}
-                className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors relative ${activeIdx === i ? "bg-[#E6FAF9]" : "hover:bg-[#F6F8FA]"}`}>
+                aria-current={activeIdx === i ? "true" : undefined}
+                className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors relative focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1] ${activeIdx === i ? "bg-[#E6FAF9]" : "hover:bg-[#F6F8FA]"}`}>
                 {activeIdx === i && <span className="absolute left-0 inset-y-0 w-[3px] bg-[#00C8C1] rounded-r-full" />}
                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${chapterDone.has(ch.id) ? "bg-[#00C8C1]" : activeIdx === i ? "border-2 border-[#00C8C1]" : "border-2 border-[#C3C9D1]"}`}>
-                  {chapterDone.has(ch.id) && <Check size={11} strokeWidth={2.5} color="#232830" />}
+                  {chapterDone.has(ch.id) && <Check size={11} strokeWidth={2.5} color="#232830" aria-hidden />}
                 </div>
                 <span className={`text-[13px] leading-snug ${activeIdx === i ? "text-[#007D78] font-semibold" : chapterDone.has(ch.id) ? "text-[#5A6472]" : "text-[#3A424E]"}`}>
-                  {t.text}{t.original && <OriginalChip />}
+                  {chTitle.text}{chTitle.original && <OriginalChip />}
                 </span>
               </button>
             );
@@ -393,17 +466,18 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
       <div className="flex-1 overflow-y-auto">
         {/* Header bar */}
         <div className="sticky top-0 bg-white border-b border-[#E1E5EA] px-6 py-3 flex items-center gap-3 z-10">
-          <button onClick={() => onNavigate("training-overview")} className="p-1.5 rounded-lg text-[#5A6472] hover:bg-[#EEF1F4] transition-colors"><ChevronLeft size={18} /></button>
+          <button onClick={() => onNavigate("training-overview")} aria-label="Zurück zur Modulübersicht"
+            className="p-1.5 rounded-lg text-[#5A6472] hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"><ChevronLeft size={18} aria-hidden /></button>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] text-[#5A6472]">{training.title}</p>
-            <p className="text-[14px] font-semibold text-[#232830] truncate">Kapitel {activeIdx + 1}: {chapterTitle.text}</p>
+            <p className="text-[14px] font-semibold text-[#232830] truncate">{t("learn.chapter")} {activeIdx + 1}: {chapterTitle.text}</p>
           </div>
           {training.fromDb && (
             <select
               value={lang}
               onChange={e => setLang(e.target.value)}
-              className="text-[13px] text-[#3A424E] border border-[#C3C9D1] rounded-lg px-2 py-1.5 bg-white hover:border-[#8A93A0] transition-colors"
-              aria-label="Anzeigesprache"
+              className="text-[13px] text-[#3A424E] border border-[#C3C9D1] rounded-lg px-2 py-1.5 bg-white hover:border-[#8A93A0] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
+              aria-label={t("common.language")}
             >
               {LEARN_LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
             </select>
@@ -415,15 +489,16 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
             </div>
           </div>
           <button onClick={() => setChapterListOpen(!chapterListOpen)}
-            className="hidden lg:flex items-center gap-1 text-[13px] text-[#5A6472] hover:text-[#3A424E] px-2 py-1.5 rounded-lg hover:bg-[#EEF1F4] transition-colors">
-            <BookOpen size={15} /> Kapitel
+            aria-label={t("learn.chapters")} aria-expanded={chapterListOpen}
+            className="hidden lg:flex items-center gap-1 text-[13px] text-[#5A6472] hover:text-[#3A424E] px-2 py-1.5 rounded-lg hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
+            <BookOpen size={15} aria-hidden /> {t("learn.chapters")}
           </button>
         </div>
 
         {/* Content */}
         <div className="max-w-[720px] mx-auto px-6 lg:px-8 py-8">
           <h1 className="text-[24px] font-semibold text-[#232830] mb-6 leading-tight">
-            Kapitel {activeIdx + 1}: {chapterTitle.text}{chapterTitle.original && <OriginalChip />}
+            {t("learn.chapter")} {activeIdx + 1}: {chapterTitle.text}{chapterTitle.original && <OriginalChip />}
           </h1>
 
           {chapter.elements.map(el => (
@@ -434,18 +509,18 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
           <div className="mt-10 pt-6 border-t border-[#E1E5EA] flex items-center justify-between">
             {activeIdx > 0 && (
               <button onClick={() => setActiveIdx(activeIdx - 1)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[#C3C9D1] text-[14px] font-medium text-[#3A424E] hover:bg-[#EEF1F4] transition-colors">
-                <ChevronLeft size={16} /> Vorheriges Kapitel
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[#C3C9D1] text-[14px] font-medium text-[#3A424E] hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
+                <ChevronLeft size={16} aria-hidden /> {t("learn.prevChapter")}
               </button>
             )}
             <div className="ml-auto">
               <button onClick={finishChapter}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-[15px] transition-all"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-semibold text-[15px] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
                 style={{ backgroundColor: "#00C8C1", color: "#232830" }}
                 onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#00B3AC")}
                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#00C8C1")}
               >
-                {chapterDone.has(chapter.id) ? "Nächstes Kapitel" : "Kapitel abschließen & weiter"} <ArrowRight size={16} />
+                {chapterDone.has(chapter.id) ? t("learn.nextChapter") : t("learn.finishChapter")} <ArrowRight size={16} aria-hidden />
               </button>
             </div>
           </div>
