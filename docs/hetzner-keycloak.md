@@ -147,14 +147,20 @@ Ohne SMTP verschickt Keycloak keine Einladungen. Zwei Wege:
 Skript erneut ausführen.
 
 ```env
-SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_FROM=noreply@deine-domain.de
-SMTP_FROM_DISPLAY=GroupIT Lernplattform
-SMTP_USER=<Benutzername des Anbieters>
-SMTP_PASSWORD=<Passwort oder API-Key>
-SMTP_STARTTLS=true
+SMTP_HOST='smtp-relay.brevo.com'
+SMTP_PORT='587'
+SMTP_FROM='noreply@deine-domain.de'
+SMTP_FROM_DISPLAY='GroupIT Lernplattform'
+SMTP_USER='<Benutzername des Anbieters>'
+SMTP_PASSWORD='<Passwort oder API-Key>'
+SMTP_STARTTLS='true'
 ```
+
+Die **einfachen Anführungszeichen beibehalten** – nur so bleiben Leerzeichen und
+Zeichen wie `$` im Passwort unverändert. Ein **Hochkomma** (`'`) lässt sich im
+`.env`-Format nicht darstellen; enthält dein Passwort eines, bricht das Skript mit
+einem Hinweis ab. Dann die E-Mail-Einstellungen stattdessen in der Keycloak-Konsole
+unter **Realm settings → Email** pflegen.
 
 > Der Realm wird **nur beim allerersten Start** importiert. Danach wirken Änderungen
 > an diesen Werten nicht mehr – dann in der Keycloak-Konsole unter
