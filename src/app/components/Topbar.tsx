@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Search, HelpCircle, BookOpen, Menu, Globe, LogOut, ShieldCheck, User } from "lucide-react";
 import logo from "../../imports/GroupIT_Logo.png";
 import { searchTrainings, type SearchHit } from "../data/api";
-import { ROLE_LABELS, useRoles, type Role } from "../data/roles";
+import { ROLE_LABELS, ROLES_ARE_AUTHORITATIVE, useRoles, type Role } from "../data/roles";
+import { currentProfile } from "../data/keycloakAuth";
 import { UI_LANGUAGES, useT } from "../i18n";
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
@@ -22,6 +23,14 @@ export function Topbar({ onMenuToggle, onOpenTraining, onLogout }: {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [menu, setMenu] = useState<null | "lang" | "profile">(null);
+
+  // Im Keycloak-Modus kommt die Identität aus dem Token; im Demo-Modus bleibt
+  // der bisherige Platzhalter, damit die Vorführung unverändert aussieht.
+  const profile = ROLES_ARE_AUTHORITATIVE ? currentProfile() : null;
+  const displayName = profile?.name?.trim() || (ROLES_ARE_AUTHORITATIVE ? profile?.email ?? "Angemeldet" : "Max Keller");
+  const initials = displayName
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? "").join("") || "?";
   const boxRef = useRef<HTMLDivElement>(null);
 
   // Suche mit Verzögerung, damit nicht jede Taste eine Abfrage auslöst
@@ -134,31 +143,40 @@ export function Topbar({ onMenuToggle, onOpenTraining, onLogout }: {
           <button onClick={() => setMenu(menu === "profile" ? null : "profile")}
             className="ml-1 flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
             aria-expanded={menu === "profile"} aria-haspopup="menu" aria-label={t("nav.profile")}>
-            <div className="w-7 h-7 rounded-full bg-[#2E3540] flex items-center justify-center text-white text-[11px] font-bold" aria-hidden>MK</div>
-            <span className="hidden lg:block text-[14px] font-medium text-[#3A424E]">Max Keller</span>
+            <div className="w-7 h-7 rounded-full bg-[#2E3540] flex items-center justify-center text-white text-[11px] font-bold" aria-hidden>{initials}</div>
+            <span className="hidden lg:block text-[14px] font-medium text-[#3A424E]">{displayName}</span>
           </button>
           {menu === "profile" && (
             <div role="menu" className="absolute right-0 top-full mt-1 w-64 bg-white border border-[#C3C9D1] rounded-lg shadow-lg py-1 z-50">
               <div className="px-3 py-2 border-b border-[#EEF1F4]">
-                <div className="text-[13px] font-semibold text-[#232830]">Max Keller</div>
+                <div className="text-[13px] font-semibold text-[#232830]">{displayName}</div>
                 <div className="text-[12px] text-[#5A6472]">
                   {roles.map(r => ROLE_LABELS[r]).join(" · ") || "—"}
                 </div>
               </div>
 
-              {/* Rollenwechsel: nur solange keine echte Anmeldung aktiv ist */}
-              <div className="px-3 py-2 border-b border-[#EEF1F4]">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#B45309] mb-1.5">
-                  <ShieldCheck size={11} /> {t("common.demoMode")} · {t("common.role")}
+              {/* Rollenwechsel nur im Demo-Modus. Bei echter Anmeldung stammen
+                  die Rollen aus dem Token und sind nicht umschaltbar – die
+                  Bedienelemente würden sonst eine Wirkung vortäuschen. */}
+              {!ROLES_ARE_AUTHORITATIVE ? (
+                <div className="px-3 py-2 border-b border-[#EEF1F4]">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#B45309] mb-1.5">
+                    <ShieldCheck size={11} /> {t("common.demoMode")} · {t("common.role")}
+                  </div>
+                  {(["admin", "editor", "user"] as Role[]).map(r => (
+                    <label key={r} className="flex items-center gap-2 py-1 text-[13px] text-[#3A424E] cursor-pointer">
+                      <input type="checkbox" checked={roles.includes(r)} onChange={() => toggleRole(r)}
+                        className="accent-[#00C8C1]" />
+                      {ROLE_LABELS[r]}
+                    </label>
+                  ))}
                 </div>
-                {(["admin", "editor", "user"] as Role[]).map(r => (
-                  <label key={r} className="flex items-center gap-2 py-1 text-[13px] text-[#3A424E] cursor-pointer">
-                    <input type="checkbox" checked={roles.includes(r)} onChange={() => toggleRole(r)}
-                      className="accent-[#00C8C1]" />
-                    {ROLE_LABELS[r]}
-                  </label>
-                ))}
-              </div>
+              ) : (
+                <div className="px-3 py-2 border-b border-[#EEF1F4] text-[12px] text-[#5A6472]">
+                  {profile?.email && <div className="truncate mb-1">{profile.email}</div>}
+                  {profile?.markets?.length ? <div>Märkte: {profile.markets.join(", ")}</div> : null}
+                </div>
+              )}
 
               <button role="menuitem" onClick={onLogout}
                 className="w-full text-left px-3 py-2 text-[14px] text-[#3A424E] hover:bg-[#EEF1F4] transition-colors flex items-center gap-2">

@@ -68,9 +68,11 @@ Ohne gesetzte `VITE_KEYCLOAK_*`-Variablen läuft die Anwendung weiter im Demo-Mo
 ## Tests
 
 ```bash
-npm run test:unit   # 30 Unit-Tests der SSO-Kernlogik (Node)
-npm run test:e2e    # 50 End-to-End-Prüfungen im echten Browser (Playwright)
-npm test            # beide
+npm run test:unit       # 30 Unit-Tests der SSO-Kernlogik
+npm run test:functions  # 34 Tests der Auth-Funktionen (Mock-Keycloak)
+npm run test:e2e        # 50 End-to-End-Prüfungen im Browser (Demo-Modus)
+npm run test:keycloak   # 10 Prüfungen des OIDC-Absprungs (Keycloak-Modus)
+npm test                # alle vier
 ```
 
 Der E2E-Lauf baut die Anwendung, startet `vite preview` und fährt die Prozesse für
@@ -80,7 +82,9 @@ Lernfortschritt, Fehlerseiten, Responsive, Barrierefreiheit). Einzelne Phasen:
 
 ## Dokumentation
 
-- **[Produktstatus](docs/produktstatus.md) – gefundene Lücken, umgesetzte Änderungen, Testergebnisse, offene Punkte, Produktionsreife**
+- **[Produktionsreife](docs/produktionsreife.md) – Stand nach der Keycloak-Anbindung, Testergebnisse, verbleibende Schritte**
+- [Produktstatus](docs/produktstatus.md) – gefundene Lücken und umgesetzte Änderungen der Finalisierung
+- [Keycloak einrichten](docs/keycloak-setup.md) – Stack, Admin-Konto, Einladungen, E-Mails
 - [Konzept](docs/konzept.md) – Zielbild, Rollen, Datenmodell, Roadmap
 - [UX/UI-Designbriefing](docs/ux-ui-design-briefing.md) – Farbsystem, Typografie, Komponenten, Screens
 

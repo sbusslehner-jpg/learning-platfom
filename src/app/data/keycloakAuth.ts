@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { UserManager, WebStorageStateStore, type User, type UserManagerSettings } from "oidc-client-ts";
-import { supabase } from "../../lib/supabase";
+import { registerSupabaseTokenSource, supabase } from "../../lib/supabase";
 import type { Role } from "./roles";
 
 // ============================================================
@@ -195,6 +195,10 @@ export function getSupabaseToken(): string | null {
   if (supabaseTokenExpiresAt && Date.now() >= supabaseTokenExpiresAt) return null;
   return supabaseToken;
 }
+
+// Die Datenschicht holt das ausgetauschte Token bei jeder Anfrage hier ab.
+// Damit sieht RLS (Migration 0005) die echte Identität statt des anon-Keys.
+registerSupabaseTokenSource(getSupabaseToken);
 
 /**
  * Legt das ausgetauschte Token auf den Supabase-Client.
