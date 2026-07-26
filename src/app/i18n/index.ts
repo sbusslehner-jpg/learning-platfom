@@ -79,6 +79,9 @@ const de: Dict = {
   "learn.nextChapter": "Nächstes Kapitel",
   "learn.prevChapter": "Vorheriges Kapitel",
   "learn.trainingDone": "Training abgeschlossen",
+  // Eigenständiges Badge – daher großgeschrieben, anders als das Statuswort
+  // "abgeschlossen" in Sätzen wie "3/5 abgeschlossen" (learn.completed).
+  "learn.completedBadge": "Abgeschlossen",
   "learn.original": "Original",
   "learn.status.open": "offen",
   "learn.status.started": "begonnen",
@@ -163,6 +166,7 @@ const en: Dict = {
   "learn.nextChapter": "Next chapter",
   "learn.prevChapter": "Previous chapter",
   "learn.trainingDone": "Training completed",
+  "learn.completedBadge": "Completed",
   "learn.original": "Original",
   "learn.status.open": "open",
   "learn.status.started": "in progress",
@@ -245,6 +249,7 @@ const fr: Dict = {
   "learn.nextChapter": "Chapitre suivant",
   "learn.prevChapter": "Chapitre précédent",
   "learn.trainingDone": "Formation terminée",
+  "learn.completedBadge": "Terminé",
   "learn.original": "Original",
   "learn.status.open": "à faire",
   "learn.status.started": "en cours",

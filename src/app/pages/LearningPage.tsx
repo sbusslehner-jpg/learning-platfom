@@ -274,7 +274,7 @@ function CompletionScreen({ title, chapterCount, elementCount, duration, onBack,
         </div>
 
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EAF8F0] text-[#15803D] text-[12px] font-semibold mb-4">
-          <CheckCircle2 size={13} aria-hidden /> {t("learn.status.done")}
+          <CheckCircle2 size={13} aria-hidden /> {t("learn.completedBadge")}
         </div>
 
         <h1 className="text-[26px] font-semibold text-[#232830] leading-tight mb-2">{t("learn.trainingDone")}</h1>
