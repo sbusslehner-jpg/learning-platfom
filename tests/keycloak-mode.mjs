@@ -14,9 +14,15 @@
 
 import { chromium } from "playwright";
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import http from "node:http";
 
-const CHROME = "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
+// Siehe tests/e2e.mjs: fest verdrahtete Browserpfade laufen nur in genau
+// einer Umgebung. Playwright findet den Browser sonst selbst.
+const CHROME =
+  process.env.PLAYWRIGHT_CHROME ||
+  ["/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell"].find(existsSync) ||
+  null;
 const KC_PORT = 8099;
 const APP_PORT = 4322;
 const KC = `http://localhost:${KC_PORT}`;
@@ -72,7 +78,17 @@ async function run() {
     await new Promise(r => setTimeout(r, 1000));
   }
 
-  const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });
+  let browser;
+  try {
+    browser = await chromium.launch({
+      ...(CHROME ? { executablePath: CHROME } : {}),
+      args: ["--no-sandbox"],
+    });
+  } catch (error) {
+    console.error("\nBrowser konnte nicht gestartet werden.");
+    console.error("Einmalig einrichten:  npx playwright install chromium\n");
+    throw error;
+  }
   try {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();

@@ -6,19 +6,24 @@ du in VS Code direkt auf dem Hetzner-Server, als wäre er dein lokaler Rechner. 
 dann übernimmt ein Skript den Rest:
 
 ```bash
-./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de https://deine-site.netlify.app
+./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de \
+                        https://deine-site.netlify.app admin@deine-domain.de
 ```
 
 Das Skript installiert Docker, richtet die Firewall ein, erzeugt alle Passwörter,
-startet Keycloak samt Datenbank und holt automatisch ein HTTPS-Zertifikat.
-Am Ende gibt es dir die fertige Liste der Netlify-Variablen aus.
+startet Keycloak samt Datenbank, holt automatisch ein HTTPS-Zertifikat, richtet
+die tägliche Datensicherung ein und **prüft am Ende selbst nach**, ob Realm und
+Backend-Client wirklich funktionieren. Danach gibt es die fertige Liste der
+Netlify-Variablen und deine Zugangsdaten aus.
 
-> **Nicht ausgeführt.** Dieser Ablauf ist geschrieben und statisch geprüft
-> (`bash -n`, `docker compose config` gegen die echte Compose-Datei, Realm-Erzeugung
-> real getestet), aber **nicht auf einem echten Server durchlaufen**: Die
-> Entwicklungsumgebung hier bekommt keine Docker-Images (Registry antwortet mit
-> `403`) und hat keinen Hetzner-Zugang. Rechne damit, dass beim ersten Lauf noch
-> etwas nachzujustieren ist – die Fehlertabelle am Ende deckt die üblichen Fälle ab.
+> **Nicht auf einem echten Server durchlaufen.** Der Ablauf ist geschrieben und
+> geprüft: Syntax, die Realm-Erzeugung mit echten Werten, die Sicherung samt
+> Rotation und ein kompletter Durchlauf des Skripts gegen simuliertes Docker
+> (erster Lauf, Wiederholungslauf, absichtlich falsches Secret). Was hier nicht
+> ging: **echte Container starten** – die Entwicklungsumgebung bekommt keine
+> Docker-Images. Der eingebaute Selbsttest ist genau dafür da: Er meldet nach dem
+> Start, ob Realm, Zertifikat und Backend-Client stimmen, statt dich das bei der
+> ersten Einladung herausfinden zu lassen.
 
 ---
 
@@ -109,35 +114,50 @@ bearbeitest du die Dateien auf dem Server direkt in der gewohnten Oberfläche.
 ```bash
 cd /opt/lernplattform
 chmod +x auth/*.sh
-./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de https://deine-site.netlify.app
+./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de \
+                        https://deine-site.netlify.app admin@deine-domain.de
 ```
 
-Die drei Angaben sind:
+Die Angaben sind:
 
 | Position | Bedeutung |
 |---|---|
 | 1 | Domain, unter der **Keycloak** erreichbar sein soll (aus Schritt 2) |
 | 2 | E-Mail für Let's Encrypt (Ablaufwarnungen des Zertifikats) |
 | 3 | Adresse deiner **Lernplattform** bei Netlify |
+| 4 | *optional:* Anmeldung des Plattform-Administrators. Ohne Angabe wird die E-Mail aus Position 2 genommen. |
 
 Was dabei passiert:
 
 1. Docker wird installiert, falls nicht vorhanden.
 2. Die Firewall lässt nur noch **22, 80 und 443** durch.
-3. Für Konsole, Datenbank und Backend-Client werden **je 40 Zeichen Zufallspasswort**
-   erzeugt und in `auth/.env` abgelegt (nur für `root` lesbar).
+3. Für Konsole, Datenbank, Backend-Client und den Plattform-Administrator werden
+   **Zufallspasswörter** erzeugt und in `auth/.env` abgelegt (nur für `root` lesbar).
 4. Der DNS-Eintrag wird geprüft – stimmt er nicht, gibt es eine Warnung statt Abbruch.
-5. Aus `auth/realm/serviceq-realm.json` entsteht eine fertige Realm-Datei mit deinen
-   echten Adressen.
+5. Aus `auth/realm/serviceq-realm.json` entsteht eine fertige Realm-Datei: deine
+   echten Adressen, das echte Client-Secret, dein Administrator-Konto, dein SMTP.
+   Die localhost-Adressen aus der Entwicklung fallen dabei heraus.
 6. Postgres, Keycloak und Caddy starten. Caddy holt das Zertifikat selbstständig.
 7. Das Skript wartet, bis Keycloak bereit meldet (erster Start dauert ein bis zwei
    Minuten, weil Keycloak sich einmalig baut).
+8. **Selbsttest:** Läuft Caddy? Antwortet der Realm `serviceq`? Kann sich der
+   Backend-Client mit genau dem Secret anmelden, das gleich nach Netlify geht?
+   Stimmen DNS und Zertifikat? Schlägt eine der ersten drei Prüfungen fehl, endet
+   das Skript mit Fehlercode – dann würde die Anmeldung ohnehin nicht laufen.
+9. Tägliche Datensicherung (03:17 Uhr, 14 Stände) und automatische
+   Sicherheitsupdates werden eingerichtet; eine erste Sicherung entsteht sofort.
 
 Am Ende erscheint ein Block mit allen Zugangsdaten und den Netlify-Variablen –
-**diesen kopierst du dir weg**, das Backend-Secret steht sonst nur in `auth/.env`.
+**diesen kopierst du dir weg**. Das Startpasswort des Administrators und das
+Backend-Secret stehen sonst nur in `auth/.env`.
 
 Der Aufruf ist wiederholbar: Ein zweiter Lauf behält die erzeugten Passwörter und
 kommt sogar ohne Parameter aus.
+
+> **Der Realm wird nur in eine leere Datenbank importiert.** Das Administrator-Konto
+> und das Backend-Secret entstehen also beim **ersten** Lauf. Änderst du sie später
+> in `auth/.env`, bleibt Keycloak bei den alten Werten – das Skript sagt dir das
+> im Selbsttest und in der Zusammenfassung.
 
 ## Schritt 6 — E-Mail-Versand einrichten
 
@@ -179,9 +199,10 @@ Ab hier gilt [`inbetriebnahme.md`](inbetriebnahme.md) unverändert weiter:
   **nicht vorher**, sonst zeigt die Demo-Seite nur noch leere Listen.
 - **Schritt 8:** Eine Einladung durchspielen.
 
-Erste Anmeldung in der Plattform: `admin@groupit.example` mit
-`Start-Passwort-2026!`. Keycloak verlangt sofort ein neues Passwort.
-Danach in der Konsole die E-Mail-Adresse auf deine echte ändern.
+Erste Anmeldung in der Plattform: mit **der E-Mail-Adresse und dem Startpasswort
+aus der Zusammenfassung** des Setup-Skripts. Keycloak verlangt sofort ein neues
+Passwort. Ein festes Standardpasswort gibt es bewusst nicht – es stünde sonst im
+Repository und wäre ab dem Import öffentlich bekannt.
 
 ---
 
@@ -199,32 +220,44 @@ $C pull && $C up -d        # Keycloak aktualisieren
 $C down                    # stoppen (Daten bleiben erhalten)
 ```
 
-**Datensicherung** – die Datenbank enthält alle Benutzerkonten:
+**Datensicherung** – die Datenbank enthält alle Benutzerkonten. Das Setup-Skript
+richtet sie bereits ein, hier nur zur Kontrolle:
 
 ```bash
-docker exec sq-keycloak-db pg_dump -U keycloak keycloak \
-  | gzip > /root/keycloak-$(date +%F).sql.gz
+cat /etc/cron.d/keycloak-backup     # täglich 03:17
+ls -lh /var/backups/keycloak/       # die letzten 14 Stände
+./auth/backup.sh                    # jederzeit von Hand
+tail /var/log/keycloak-backup.log   # lief die letzte Sicherung durch?
 ```
 
-Als tägliche Aufgabe einrichten:
+Eine Sicherung zurückspielen (Keycloak vorher stoppen, sonst schreibt er dazwischen):
 
 ```bash
-echo '0 3 * * * docker exec sq-keycloak-db pg_dump -U keycloak keycloak | gzip > /root/keycloak-$(date +\%F).sql.gz' | crontab -
+C="docker compose -f auth/docker-compose.prod.yml"
+$C stop keycloak
+gunzip -c /var/backups/keycloak/keycloak-2026-01-31-031702.sql.gz \
+  | docker exec -i sq-keycloak-db psql -U keycloak -d keycloak
+$C start keycloak
 ```
+
+> Eine Sicherung, die noch nie zurückgespielt wurde, ist eine Vermutung.
+> Spiel den Ablauf einmal auf einem Testserver durch, bevor du ihn brauchst.
 
 Zusätzlich die **Hetzner-Backups** (Snapshots) im Cloud-Panel aktivieren – 20 % des
-Serverpreises, spart im Ernstfall Stunden.
+Serverpreises, spart im Ernstfall Stunden. Und: Die Sicherungen liegen auf
+demselben Server wie die Datenbank. Für den Ernstfall gehört mindestens ein Stand
+woanders hin (`scp`, S3-kompatibler Speicher, Hetzner Storage Box).
 
-**Automatische Sicherheitsupdates:**
-
-```bash
-apt-get install -y unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades
-```
+**Automatische Sicherheitsupdates** aktiviert das Setup-Skript ebenfalls.
+Kontrolle: `cat /etc/apt/apt.conf.d/20auto-upgrades` – beide Werte müssen `"1"` sein.
 
 ## Wenn etwas klemmt
 
 | Symptom | Ursache und Behebung |
 |---|---|
+| Selbsttest: **„Backend-Client kann sich NICHT anmelden"** | Das Secret in Keycloak stimmt nicht mit `auth/.env` überein. Passiert, wenn der Realm aus einem früheren Lauf stammt: Konsole → Clients → `platform-backend` → **Credentials** → Secret auslesen und in `auth/.env` **und** in Netlify eintragen. Alternativ dort **Regenerate** klicken und den neuen Wert übernehmen. |
+| Selbsttest: **„Realm serviceq antwortet nicht"** | Der Import ist nicht gelaufen. `docker compose -f auth/docker-compose.prod.yml logs keycloak \| grep -i import` ansehen. Nur bei leerer Datenbank importiert Keycloak. |
+| Selbsttest: **„Caddy läuft nicht"** | Fast immer ein Tippfehler in `auth/Caddyfile`. `docker compose -f auth/docker-compose.prod.yml logs caddy` zeigt die Zeile. Prüfen ohne Neustart: `docker compose -f auth/docker-compose.prod.yml exec caddy caddy validate --config /etc/caddy/Caddyfile` |
 | Browser meldet Zertifikatsfehler | DNS zeigt noch nicht auf den Server. `dig +short auth.deine-domain.de` prüfen, danach `docker compose -f auth/docker-compose.prod.yml restart caddy` |
 | „connection refused" auf Port 443 | Hetzner-**Cloud-Firewall** im Panel blockiert zusätzlich zur `ufw` – dort 80 und 443 freigeben |
 | Keycloak startet, Konsole zeigt Fehler zum Hostname | `KC_PUBLIC_HOST` in `auth/.env` stimmt nicht mit der aufgerufenen Domain überein |
@@ -241,13 +274,22 @@ Der Stack ist bewusst schlank gehalten. Vor einem Rollout mit echten Personendat
 - **SSH absichern:** `PermitRootLogin prohibit-password` und
   `PasswordAuthentication no` in `/etc/ssh/sshd_config`, danach
   `systemctl restart ssh`. Besser noch: eigener Benutzer mit `sudo`.
+  **Vorher in einer zweiten Sitzung prüfen, dass der Schlüssel funktioniert** –
+  sonst sperrst du dich aus.
 - **Schnellerer Start:** eigenes Image mit `kc.sh build` bauen und
   `start --optimized` verwenden statt `start`.
-- **Admin-Konsole abschotten:** In der `Caddyfile` den Pfad `/admin*` auf bekannte
-  IP-Adressen begrenzen oder über ein VPN erreichbar machen.
+- **Admin-Konsole abschotten:** In der `Caddyfile` ist dafür ein Block
+  vorbereitet. Er begrenzt **nur** `/admin/master/console*`.
+  **Nicht `/admin*` sperren:** darunter liegt auch die Admin-REST-API
+  (`/admin/realms/...`), über die die Netlify-Funktion Benutzer anlegt. Deren
+  Quell-IP wechselt – eine Sperre auf `/admin*` ließe **jede Einladung
+  scheitern**. Die API ist ohnehin durch das Service-Account-Token geschützt.
 - **Secrets aus einem Store** statt aus `auth/.env`, sobald ein solcher verfügbar ist.
-- **Überwachung:** Keycloak liefert Metriken unter `/metrics` (Port 9000, nur intern).
-  Mindestens eine Erreichbarkeitsprüfung auf `https://auth.deine-domain.de/health/ready`
-  einrichten.
+- **Überwachung:** `https://auth.deine-domain.de/health/ready` ist über Caddy
+  erreichbar und eignet sich als Erreichbarkeitsprüfung (Uptime Kuma, Better
+  Stack, Hetzner-Monitoring). Die Metriken unter `/metrics` bleiben bewusst auf
+  dem internen Port 9000 – sie verraten mehr, als nach außen gehört.
 - **Brute-Force-Schutz und Passwortrichtlinie** sind im Realm voreingestellt
   (10 Fehlversuche, 12 Zeichen) – mit eurer Security abstimmen.
+- **Log-Rotation** für `/var/log/keycloak-backup.log` und die Caddy-Zugriffslogs
+  (Caddy rotiert selbst: 10 MiB, 5 Stände).

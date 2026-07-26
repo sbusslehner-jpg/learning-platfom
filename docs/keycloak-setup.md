@@ -46,8 +46,13 @@ Lernplattform anmelden):
 | Märkte | DE, AT, CH, FR, PL, IT, ES, NL, CZ, SE |
 
 Das Passwort ist als **temporär** hinterlegt: Keycloak verlangt bei der ersten
-Anmeldung eine Änderung. Ändern Sie zusätzlich die E-Mail-Adresse auf Ihre echte,
-damit Sie Zurücksetzungs-Mails erhalten.
+Anmeldung eine Änderung.
+
+> ⚠️ **Nur für die Entwicklung.** Diese Zugangsdaten stehen im Repository und
+> sind damit öffentlich bekannt. Im Produktivbetrieb werden sie **nicht**
+> verwendet: Dort erzeugen `hetzner-setup.sh` bzw. `configure.sh` ein Konto mit
+> Ihrer echten E-Mail-Adresse und einem zufälligen Startpasswort – siehe
+> [`inbetriebnahme.md`](inbetriebnahme.md), Schritt 2a.
 
 **b) Keycloak-Instanz-Administrator** (nur für die Keycloak-Konsole selbst):
 `kcadmin` / das Passwort aus `KC_ADMIN_PASSWORD` in Ihrer `.env`.
@@ -138,13 +143,20 @@ Einladungen im Spam.
 ## 8. Produktionshärtung von Keycloak
 
 Die mitgelieferte `docker-compose.yml` ist für Entwicklung und Abnahme gedacht
-(`start-dev`). Für den Echtbetrieb:
+(`start-dev`). Für den Echtbetrieb liegt **`auth/docker-compose.prod.yml`** bereit;
+auf einem eigenen Server richtet [`hetzner-setup.sh`](hetzner-keycloak.md) alles
+Weitere ein. Was dort bereits gesetzt ist bzw. noch zu tun bleibt:
 
-- `start --optimized` statt `start-dev`, hinter einem TLS-Terminator (Reverse Proxy).
-- `KC_HOSTNAME` auf die echte Domain, `KC_HOSTNAME_STRICT=true`.
-- `KC_PROXY_HEADERS=xforwarded` und `--http-enabled=false`.
-- Passwörter und Secrets aus einem Secret Store, nicht aus `.env`.
-- PostgreSQL mit Backup, persistentem Volume und Monitoring.
+- ✅ `start` statt `start-dev`, hinter Caddy als TLS-Terminator.
+- ✅ `KC_HOSTNAME` auf die echte Domain, `KC_HOSTNAME_STRICT=true`.
+- ✅ `KC_PROXY_HEADERS=xforwarded`. **`KC_HTTP_ENABLED` bleibt `true`** – TLS endet
+  bei Caddy, die letzte Strecke im Docker-Netz ist HTTP. Auf `false` gesetzt,
+  nimmt Keycloak keine Verbindung von Caddy mehr an.
+- ✅ Keycloak und PostgreSQL ohne `ports:` – von außen nicht erreichbar.
+- ✅ Tägliche Datensicherung mit Rotation (`auth/backup.sh`).
+- ⬜ `start --optimized` mit eigenem Image (`kc.sh build`) – spart Startzeit.
+- ⬜ Passwörter und Secrets aus einem Secret Store, nicht aus `auth/.env`.
+- ⬜ Mindestens ein Sicherungsstand außerhalb des Servers.
 - Brute-Force-Schutz ist im Realm aktiv (10 Fehlversuche, ansteigende Wartezeit);
   Schwellwerte mit Ihrer Security abstimmen.
 - Passwortrichtlinie ist auf 12 Zeichen mit Groß-/Kleinbuchstaben und Ziffer,

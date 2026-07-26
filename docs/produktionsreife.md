@@ -45,6 +45,9 @@ Daten im anonymen Zugriff. Dieses Dokument beschreibt, was sich geändert hat.
 | `npm run test:e2e` | 3 Rollen, Guards, i18n, Responsive, a11y (Demo-Modus) | ✅ **50/50** |
 | `npm run test:keycloak` | OIDC-Absprung im echten Browser (Stub-Keycloak) | ✅ **10/10** |
 | `npm run build` | Produktionsbuild | ✅ fehlerfrei |
+| Setup-Skript gegen simuliertes Docker | Erstlauf, Wiederholungslauf, falsches Secret, `.env`-Roundtrip mit `$` und Leerzeichen | ✅ durchlaufen |
+| `auth/backup.sh` | Sicherung, gzip-Prüfung, Rotation auf N Stände, Fehlerfall | ✅ durchlaufen |
+| `auth/configure.sh` | Produktionsdatei, Abbruch bei offenem Platzhalter, Schutz der Quelldatei | ✅ durchlaufen |
 
 **Besonders belastbar:** Die sicherheitskritischen Prüfungen der Auth-Funktionen sind
 **mutationsgeprüft** – jede Prüfung wurde einzeln entfernt und der zugehörige Test
@@ -53,9 +56,15 @@ Rollen-Allowlist, kompensierendes Löschen, Deaktivierungs-Sperre).
 
 **Nicht ausgeführt:** Ein vollständiger Anmelde-Rundlauf gegen eine **echte**
 Keycloak-Instanz, echter E-Mail-Versand, RLS-Policies gegen eine echte Postgres-Instanz,
-Last- und Penetrationstest. Grund: Die Netzwerkrichtlinie der Entwicklungsumgebung
-blockiert Docker-Registries (`403` von quay.io), Keycloak und Postgres ließen sich hier
-nicht starten. Realm-JSON, Compose-Datei und SQL sind statisch geprüft.
+Last- und Penetrationstest. Grund: Die Entwicklungsumgebung bekommt keine
+Docker-Images, Keycloak und Postgres ließen sich hier nicht starten. Realm-JSON,
+Compose-Datei und SQL sind statisch geprüft.
+
+Damit dieser Rest nicht ungeprüft in den Betrieb geht, prüft `hetzner-setup.sh`
+sich nach dem Start **selbst**: Läuft Caddy? Antwortet der Realm? Kann sich der
+Backend-Client mit dem Secret anmelden, das gleich nach Netlify geht? Stimmen DNS
+und Zertifikat? Damit fällt genau das auf dem Server auf, was hier nicht
+nachstellbar war – und zwar beim Setup statt bei der ersten Einladung.
 
 ## 4. Bewertung
 
@@ -66,15 +75,30 @@ nicht mehr in der Oberfläche, sondern in der Datenbank und in serverseitig gepr
 Tokens. Was fehlt, ist keine Entwicklungsarbeit mehr, sondern **Betrieb und Abnahme**:
 
 1. Keycloak-Stack in Ihrer Umgebung starten und den Realm importieren.
+   Auf einem eigenen Server erledigt das `auth/hetzner-setup.sh` in einem Lauf –
+   inklusive HTTPS, Zufallspasswörtern, täglicher Sicherung und Selbsttest.
 2. `0005_production_rls.sql` einspielen und die Kontrollabfrage ausführen
    (`0 Zeilen` für `anon`-Policies).
 3. Umgebungsvariablen in Netlify setzen; damit schaltet die Oberfläche in den
    Keycloak-Modus.
 4. Produktions-SMTP samt SPF/DKIM/DMARC einrichten und einen echten
    Einladungs-Rundlauf abnehmen.
-5. Keycloak produktiv härten (`start --optimized` hinter TLS, Secrets aus einem Store).
+5. Restliche Härtung: `start --optimized`, Secrets aus einem Store, ein
+   Sicherungsstand außerhalb des Servers, SSH auf Schlüssel beschränken.
 
 Details: [`keycloak-setup.md`](keycloak-setup.md).
+
+**Beim Vorbereiten der Inbetriebnahme behoben:**
+
+| Fund | Wirkung, wenn er stehen geblieben wäre |
+|---|---|
+| Startpasswort des Administrators stand im Repository | Zwischen Realm-Import und Ihrer ersten Anmeldung hätte sich jeder Leser des Repositorys als Administrator anmelden können. Jetzt: Zufallspasswort, einmalig angezeigt. |
+| Client-Secret als `${PLATFORM_BACKEND_SECRET}` im Realm | Keycloak ersetzt den Platzhalter beim Import nicht zuverlässig und übernimmt ihn wörtlich. Einladungen wären mit „Service-Account konnte sich nicht anmelden" gescheitert – ohne erkennbaren Zusammenhang. Jetzt: echtes Secret in der erzeugten Datei, im Selbsttest geprüft. |
+| `localhost`-Redirect-URIs im Produktions-Realm | Unnötig erlaubte Rücksprungziele eines öffentlichen Clients. Jetzt: fallen bei der Erzeugung heraus. |
+| Empfehlung, `/admin*` per IP zu sperren | Hätte die Admin-REST-API mitgesperrt und **jede Einladung** aus Netlify unterbunden. Jetzt: nur `/admin/master/console*`. |
+| Empfehlung `--http-enabled=false` hinter dem Proxy | Keycloak hätte keine Verbindung von Caddy mehr angenommen. Jetzt korrigiert. |
+| Überwachung auf `/health/ready` | Lag auf dem internen Port 9000 und lieferte über die öffentliche Adresse 404 – die Prüfung hätte nie funktioniert. Jetzt über Caddy erreichbar, `/metrics` bleibt intern. |
+| Backup-Cron aus der Anleitung | `crontab -` hätte bestehende Aufgaben ersetzt, und es gab keine Rotation. Jetzt: eigene Datei unter `/etc/cron.d`, 14 Stände, geprüfte Sicherung. |
 
 ## 5. Offene Punkte (keine Blocker mehr)
 

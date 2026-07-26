@@ -65,11 +65,13 @@ zeigt auch die Produktionsseite die Demo-Anmeldung – siehe
 echten Anmeldung in acht Schritten. Auf einem eigenen Server erledigt das ein Skript:
 
 ```bash
-./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de https://deine-site.netlify.app
+./auth/hetzner-setup.sh auth.deine-domain.de mail@deine-domain.de \
+                        https://deine-site.netlify.app admin@deine-domain.de
 ```
 
-Docker, Firewall, Passwörter, HTTPS-Zertifikat und Realm-Import in einem Lauf –
-Details in [docs/hetzner-keycloak.md](docs/hetzner-keycloak.md).
+Docker, Firewall, Passwörter, HTTPS-Zertifikat, Realm-Import, tägliche Sicherung
+und ein Selbsttest in einem Lauf – Details in
+[docs/hetzner-keycloak.md](docs/hetzner-keycloak.md).
 
 ## Go-Live-Checkliste
 

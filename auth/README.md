@@ -104,9 +104,11 @@ Die Oberfläche unterstützt zwei Modi, damit die Vorführung nicht bricht:
 | `docker-compose.yml` | Entwicklung und Abnahme: `start-dev`, Mailpit als Postfach |
 | `docker-compose.prod.yml` | Produktivbetrieb: `start`, Caddy mit automatischem HTTPS, kein Mailpit, keine offenen Ports außer 80/443 |
 | `Caddyfile` | Reverse Proxy und Zertifikatsverwaltung |
-| `configure.sh` | Trägt echte Adressen (und optional SMTP) in die Realm-Definition ein |
-| `hetzner-setup.sh` | Richtet den kompletten Stack auf einem frischen Root-Server ein |
-| `realm/serviceq-realm.json` | Realm-Vorlage mit Platzhalter-Domain |
+| `configure.sh` | Erzeugt aus der Vorlage die einsatzfertige Realm-Datei: echte Adressen, Client-Secret, Administrator-Konto, SMTP |
+| `hetzner-setup.sh` | Richtet den kompletten Stack auf einem frischen Root-Server ein, prüft sich am Ende selbst |
+| `backup.sh` | Sichert die Keycloak-Datenbank mit Rotation (täglich per `/etc/cron.d`) |
+| `realm/serviceq-realm.json` | Realm-**Vorlage**: Platzhalter-Domain, Platzhalter-Secret, Entwicklungs-Zugangsdaten. Nie unverändert in die Produktion importieren |
+| `realm-generated/` | Von `configure.sh` erzeugte Produktionsdatei. Enthält Geheimnisse, Rechte `600`, in `.gitignore` |
 | `themes/groupit/` | Login- und E-Mail-Theme im GroupIT-Design |
 
 ## Nächste Schritte

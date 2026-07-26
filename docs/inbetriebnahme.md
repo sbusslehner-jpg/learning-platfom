@@ -75,29 +75,49 @@ Für den Produktivbetrieb mit Personenbezug: **EU-Region wählen** (DSGVO).
 
 ## Schritt 2 — Realm anpassen und importieren
 
-### 2a. Adressen eintragen
+### 2a. Realm-Datei für die Produktion erzeugen
 
 Deine Netlify-Adresse findest du im Netlify-Dashboard oben auf der Site-Übersicht
 (z. B. `https://verspielt-name-1234.netlify.app`) oder unter Domain management.
 
-Im Projektverzeichnis:
+Im Projektverzeichnis – die drei `export`-Zeilen zuerst, sie füllen Secret und
+Administrator-Konto:
 
 ```bash
-./auth/configure.sh https://DEINE-NETLIFY-ADRESSE https://DEINE-KEYCLOAK-ADRESSE
+export PLATFORM_BACKEND_SECRET="$(openssl rand -hex 24)"
+export PLATFORM_ADMIN_EMAIL="admin@deine-domain.de"      # deine echte Adresse
+export PLATFORM_ADMIN_PASSWORD="$(openssl rand -hex 8)Aa1"
+
+./auth/configure.sh https://DEINE-NETLIFY-ADRESSE https://DEINE-KEYCLOAK-ADRESSE \
+                    auth/realm-generated/serviceq-realm.json
+
+echo "Backend-Secret:   $PLATFORM_BACKEND_SECRET"
+echo "Admin-Passwort:   $PLATFORM_ADMIN_PASSWORD"
 ```
 
-Das ersetzt die Platzhalter in `auth/realm/serviceq-realm.json` (Redirect-URIs,
-Web-Origins, Post-Logout-URIs), legt eine Sicherungskopie an und gibt dir die
-fertige Liste der Netlify-Variablen aus. Änderungen committen und pushen.
+**Beide Werte jetzt wegkopieren.** Das Secret brauchst du in Schritt 5, das
+Passwort in Schritt 6.
+
+Das erzeugt `auth/realm-generated/serviceq-realm.json` mit deinen echten Adressen,
+dem echten Client-Secret und deinem Administrator-Konto; die localhost-Adressen
+aus der Entwicklung fallen heraus. Die Quelldatei im Repository bleibt unberührt.
+
+> **Diese Datei enthält Geheimnisse.** Sie bekommt automatisch die Rechte `600`
+> und liegt in `.gitignore` – **nicht committen, nicht per Chat verschicken.**
+>
+> Warum nicht einfach die Datei aus dem Repository nehmen? Weil dort für das
+> Secret ein Platzhalter `${PLATFORM_BACKEND_SECRET}` steht. Keycloak ersetzt den
+> beim Import **nicht** zuverlässig und übernimmt ihn dann wörtlich als Secret –
+> auffallen würde das erst bei der ersten Einladung.
 
 ### 2b. Realm importieren
 
 Keycloak-Konsole öffnen (`https://DEINE-KEYCLOAK-ADRESSE`), als `kcadmin` anmelden:
 
 1. Links oben im Realm-Auswahlfeld → **Create realm**
-2. **Browse** → `auth/realm/serviceq-realm.json` hochladen → **Create**
+2. **Browse** → `auth/realm-generated/serviceq-realm.json` hochladen → **Create**
 
-Der Realm bringt Rollen, beide Clients, das Administrator-Konto und die
+Der Realm bringt Rollen, beide Clients, dein Administrator-Konto und die
 Passwortrichtlinie mit.
 
 ### 2c. Theme hochladen (gestaltete E-Mails)
@@ -120,13 +140,25 @@ E-Mail-Theme stehen auf `groupit`.
 
 ---
 
-## Schritt 3 — Client-Secret holen
+## Schritt 3 — Client-Secret prüfen
 
-Keycloak-Konsole → Realm `serviceq` → **Clients** → `platform-backend` →
-Reiter **Credentials** → **Client Secret** kopieren.
+Den Wert hast du schon: `PLATFORM_BACKEND_SECRET` aus Schritt 2a. Er wird gleich
+als `KEYCLOAK_BACKEND_CLIENT_SECRET` gebraucht.
 
-Dieser Wert wird gleich als `KEYCLOAK_BACKEND_CLIENT_SECRET` gebraucht.
-**Niemals** mit `VITE_`-Präfix setzen – sonst landet er im Browser-Bundle.
+Zur Kontrolle – Keycloak-Konsole → Realm `serviceq` → **Clients** →
+`platform-backend` → Reiter **Credentials** → **Client Secret**. Dort muss
+derselbe Wert stehen. Steht dort `${PLATFORM_BACKEND_SECRET}`, wurde die falsche
+Realm-Datei importiert: Schritt 2a wiederholen, Realm löschen, neu importieren.
+
+Schneller geht die Prüfung im Terminal – die Antwort muss ein `access_token` enthalten:
+
+```bash
+curl -s -X POST "https://DEINE-KEYCLOAK-ADRESSE/realms/serviceq/protocol/openid-connect/token" \
+  -d grant_type=client_credentials -d client_id=platform-backend \
+  --data-urlencode "client_secret=$PLATFORM_BACKEND_SECRET"
+```
+
+**Niemals** mit `VITE_`-Präfix setzen – sonst landet das Secret im Browser-Bundle.
 
 ---
 
@@ -199,10 +231,13 @@ Keycloak-Anmeldeseite landen. Erscheint noch das Formular mit dem gelben
 Demo-Hinweis, hat der Build die Variablen nicht gesehen → Schreibweise prüfen
 (`VITE_KEYCLOAK_URL`, exakt so) und erneut deployen.
 
-**Erste Anmeldung:** `admin@groupit.example` mit `Start-Passwort-2026!`.
-Keycloak verlangt sofort ein neues Passwort. Ändere anschließend die
-E-Mail-Adresse auf deine echte (Konsole → Users → admin → Email), damit du
-Zurücksetzungs-Mails erhältst.
+**Erste Anmeldung:** mit `PLATFORM_ADMIN_EMAIL` und `PLATFORM_ADMIN_PASSWORD`
+aus Schritt 2a (auf dem eigenen Server: aus der Zusammenfassung des Setup-Skripts).
+Keycloak verlangt sofort ein neues Passwort.
+
+Ein festes Standardpasswort gibt es bewusst nicht: Es stünde im Repository und
+wäre damit ab dem Import öffentlich bekannt – in dem Zeitfenster, bis du dich
+zum ersten Mal anmeldest, könnte sich jemand anders als Administrator anmelden.
 
 ---
 
@@ -252,13 +287,18 @@ Läuft das durch, ist die Umstellung abgeschlossen.
 | Anmeldung klappt, danach leere Listen | Schritt 7 wurde vor Schritt 6 ausgeführt, oder `SUPABASE_JWT_SECRET` ist falsch → Wert prüfen, neu deployen |
 | Einladung kommt nicht an | SMTP-Test in Keycloak wiederholen; Spam-Ordner prüfen; SPF/DKIM/DMARC setzen |
 | „403 – keine Berechtigung" beim Einladen | Dein Konto hat die Rolle `admin` nicht → Konsole → Users → dein Konto → Role mapping |
+| Einladen bricht ab: „Service-Account konnte sich nicht bei Keycloak anmelden" | `KEYCLOAK_BACKEND_CLIENT_SECRET` in Netlify stimmt nicht mit dem Client überein. Prüfung siehe Schritt 3. Steht in Keycloak `${PLATFORM_BACKEND_SECRET}`, wurde die unbearbeitete Realm-Datei importiert. |
 | E-Mail kommt, sieht aber nicht nach GroupIT aus | Theme nicht im Image → Weg A aus Schritt 2c |
 | Nach „Abmelden" sofort wieder angemeldet | Post-Logout-URI fehlt → `configure.sh` erneut laufen lassen und Realm aktualisieren |
 
 ## Danach empfohlen
 
 - **Eigene Domain** für die Plattform (Netlify → Domain management) und für
-  Keycloak (`auth.deine-domain.de`), danach `configure.sh` erneut ausführen.
+  Keycloak (`auth.deine-domain.de`). Der Realm ist dann schon importiert –
+  die neuen Adressen also **in der Konsole** nachziehen: Clients →
+  `learning-platform` → *Valid redirect URIs*, *Web origins* und
+  *Valid post logout redirect URIs* (jeweils mit `/*` am Ende). Ein erneuter
+  Import würde bestehende Benutzerkonten nicht anfassen, aber auch nichts ändern.
 - **Keycloak härten:** `KC_HOSTNAME` auf die echte Domain, `KC_HOSTNAME_STRICT=true`,
   `start --optimized`, Secrets aus einem Secret Store, Backups der Datenbank.
 - **Übersetzungs-Worker deployen** (`docs/uebersetzung-worker.md`), sonst bleiben

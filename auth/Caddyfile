@@ -19,6 +19,34 @@
 {$KC_PUBLIC_HOST} {
 	encode zstd gzip
 
+	# Optional: die Admin-KONSOLE auf bekannte Adressen begrenzen.
+	#
+	# Wichtig – NICHT `/admin*` sperren. Darunter liegt auch die
+	# Admin-REST-API (`/admin/realms/...`), über die die Netlify-Funktion
+	# Benutzer anlegt und Einladungen versendet. Deren Quell-IP wechselt;
+	# eine Sperre auf `/admin*` ließe jede Einladung scheitern. Die API ist
+	# ohnehin durch das Service-Account-Token geschützt. Einzuschränken ist
+	# nur der Konsolenpfad:
+	#
+	#	@adminkonsole {
+	#		path /admin/master/console*
+	#		not remote_ip 203.0.113.0/24
+	#	}
+	#	respond @adminkonsole 403
+
+	# Betriebsüberwachung. Keycloak legt /health seit Version 25 auf den
+	# separaten Management-Port 9000 – über 8080 antwortet der Pfad mit 404.
+	# Ohne diese Route liefe also jede Erreichbarkeitsprüfung ins Leere.
+	# Bewusst nur /health: /metrics bleibt auf 9000 und damit intern.
+	#
+	# Zwei `reverse_proxy` derselben Art behalten ihre Reihenfolge aus dieser
+	# Datei – der erste passende gewinnt. Deshalb hier kein `handle`: das
+	# stünde in Caddys Direktiven-Reihenfolge vor `encode` und würde die
+	# Komprimierung aushebeln.
+	@health path /health /health/*
+	reverse_proxy @health keycloak:9000
+
+	# Alles Übrige an Keycloak selbst.
 	# X-Forwarded-For / -Proto / -Host setzt Caddy automatisch;
 	# Keycloak liest sie über KC_PROXY_HEADERS=xforwarded.
 	reverse_proxy keycloak:8080

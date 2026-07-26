@@ -16,6 +16,14 @@
 #
 # Ersetzt die Platzhalter für Redirect-URIs, Web-Origins und Post-Logout-URIs.
 # Mehrfaches Ausführen ist unschädlich.
+#
+# NUR mit Ausgabepfad (also für die erzeugte Produktionsdatei) wirken zusätzlich:
+#   PLATFORM_BACKEND_SECRET   echtes Secret des Clients `platform-backend`
+#   PLATFORM_ADMIN_EMAIL      Anmeldung des mitgelieferten Administrators
+#   PLATFORM_ADMIN_PASSWORD   dessen Startpasswort (muss sofort geändert werden)
+#   KEEP_LOCALHOST_REDIRECTS=1  localhost-Redirects stehen lassen (Standard: entfernen)
+# Diese Werte werden bewusst NIE in die Quelldatei geschrieben – die liegt im
+# Repository. Die erzeugte Datei enthält Geheimnisse und bekommt Rechte 600.
 # ============================================================
 set -euo pipefail
 
@@ -44,18 +52,31 @@ fi
 
 if [[ -n "$OUT_FILE" ]]; then
   TARGET="$OUT_FILE"
+  GENERATED=1
   mkdir -p "$(dirname "$TARGET")"
+  # Die Datei entsteht mit 600, bevor irgendetwas hineingeschrieben wird –
+  # sonst stünde ein Secret kurzzeitig für alle lesbar im Dateisystem.
+  umask 077
 else
   TARGET="$REALM_FILE"
+  GENERATED=0
   cp "$REALM_FILE" "$REALM_FILE.bak"
+  for var in PLATFORM_BACKEND_SECRET PLATFORM_ADMIN_EMAIL PLATFORM_ADMIN_PASSWORD; do
+    if [[ -n "${!var:-}" ]]; then
+      echo "Hinweis: $var wird ignoriert – Geheimnisse werden nie in die Quelldatei" >&2
+      echo "         geschrieben. Dafür einen Ausgabepfad als 3. Parameter angeben." >&2
+      break
+    fi
+  done
 fi
 
 # Host ohne Schema für die Web-Origins
 PLATFORM_HOST="${PLATFORM_URL#*://}"
 
-python3 - "$REALM_FILE" "$TARGET" "$PLATFORM_URL" "$PLATFORM_HOST" <<'PY'
-import json, os, sys
+python3 - "$REALM_FILE" "$TARGET" "$PLATFORM_URL" "$PLATFORM_HOST" "$GENERATED" <<'PY'
+import json, os, re, sys
 src, dest, url, host = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+generated = sys.argv[5] == "1"
 data = json.load(open(src))
 
 PLACEHOLDER = "REPLACE-WITH-NETLIFY-SITE.netlify.app"
@@ -81,6 +102,72 @@ for client in data.get("clients", []):
         for key in ("redirectUris", "webOrigins", "postLogoutRedirectUris"):
             if key in client:
                 client[key] = list(dict.fromkeys(client[key]))
+
+# ── Nur für die erzeugte Produktionsdatei ───────────────────────────────────
+notes = []
+if generated:
+    # 1. Entwicklungs-Redirects entfernen. Ein öffentlicher Client mit
+    #    localhost-Redirect ist im Produktivrealm überflüssig; jede
+    #    zusätzlich erlaubte Zieladresse vergrößert nur die Angriffsfläche.
+    if os.environ.get("KEEP_LOCALHOST_REDIRECTS", "").strip() != "1":
+        def is_local(value):
+            return "localhost" in value or "127.0.0.1" in value or "[::1]" in value
+
+        for client in data.get("clients", []):
+            if client.get("clientId") != "learning-platform":
+                continue
+            removed = 0
+            for key in ("redirectUris", "webOrigins", "postLogoutRedirectUris"):
+                kept = [u for u in client.get(key, []) if not is_local(u)]
+                removed += len(client.get(key, [])) - len(kept)
+                if not kept:
+                    # Ohne Redirect-URI wäre der Client unbrauchbar – dann
+                    # lieber alles stehen lassen und laut werden.
+                    raise SystemExit(
+                        f"Fehler: nach dem Entfernen der localhost-Eintraege bliebe "
+                        f"'{key}' leer. Stimmt die Plattform-Adresse ({url})?"
+                    )
+                client[key] = kept
+            attrs = client.get("attributes", {})
+            raw = attrs.get("post.logout.redirect.uris", "")
+            if raw:
+                # Keycloak trennt diese Liste mit `##`
+                attrs["post.logout.redirect.uris"] = "##".join(
+                    p for p in raw.split("##") if p and not is_local(p)
+                )
+            if removed:
+                notes.append(f"{removed} localhost-Eintraege entfernt (Produktionsrealm)")
+
+    # 2. Client-Secret des Backends fest eintragen.
+    #    Bewusst NICHT auf Keycloaks Platzhalter-Ersetzung im Import
+    #    verlassen: sie greift nur bei bestimmten Schreibweisen, und ein
+    #    nicht ersetzter Platzhalter wird stillschweigend als Secret
+    #    uebernommen. Der Fehler faellt dann erst bei der ersten Einladung
+    #    auf ("Service-Account konnte sich nicht anmelden").
+    secret = os.environ.get("PLATFORM_BACKEND_SECRET", "").strip()
+    if secret:
+        for client in data.get("clients", []):
+            if client.get("clientId") == "platform-backend":
+                client["secret"] = secret
+                notes.append("Backend-Secret eingetragen")
+
+    # 3. Administrator-Konto: echte Adresse und zufaelliges Startpasswort.
+    #    Die Quelldatei liegt im Repository – ein dort stehendes Passwort
+    #    waere ab dem Import oeffentlich bekannt.
+    admin_email = os.environ.get("PLATFORM_ADMIN_EMAIL", "").strip().lower()
+    admin_password = os.environ.get("PLATFORM_ADMIN_PASSWORD", "")
+    for user in data.get("users", []):
+        if "admin" not in (user.get("realmRoles") or []):
+            continue
+        if admin_email:
+            user["username"] = admin_email
+            user["email"] = admin_email
+            notes.append(f"Administrator: {admin_email}")
+        if admin_password:
+            user["credentials"] = [
+                {"type": "password", "value": admin_password, "temporary": True}
+            ]
+            notes.append("Startpasswort eingetragen")
 
 # SMTP nur anfassen, wenn ein echter Host vorgegeben wurde
 smtp_host = os.environ.get("SMTP_HOST", "").strip()
@@ -112,9 +199,24 @@ if smtp_host:
         smtp.pop("password", None)
     data["smtpServer"] = smtp
 
+# Kein `${...}` darf in der Produktionsdatei überleben. Keycloak importiert
+# solche Werte sonst wörtlich – aus einem Secret wird dann die Zeichenkette
+# "${PLATFORM_BACKEND_SECRET}", und die stimmt mit nichts überein.
+if generated:
+    leftovers = sorted(set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", json.dumps(data))))
+    if leftovers:
+        raise SystemExit(
+            "Fehler: unaufgeloeste Platzhalter in der erzeugten Realm-Datei: "
+            + ", ".join(leftovers)
+            + "\n       Die passende Umgebungsvariable setzen und erneut ausfuehren."
+        )
+
 with open(dest, "w") as fh:
     json.dump(data, fh, indent=2, ensure_ascii=False)
     fh.write("\n")
+
+for note in notes:
+    print("  •", note)
 
 for client in data.get("clients", []):
     if client.get("clientId") == "learning-platform":

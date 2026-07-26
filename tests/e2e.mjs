@@ -21,8 +21,16 @@
 
 import { chromium } from "playwright";
 import { spawn, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
-const CHROME = "/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell";
+// Normalerweise findet Playwright seinen Browser selbst (`npx playwright
+// install chromium`). Nur Umgebungen, die ihn woanders vorinstallieren,
+// brauchen einen expliziten Pfad – ein fest verdrahteter Pfad ließe den
+// Testlauf überall sonst scheitern.
+const CHROME =
+  process.env.PLAYWRIGHT_CHROME ||
+  ["/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell"].find(existsSync) ||
+  null;
 const PORT = 4321;
 const BASE = `http://localhost:${PORT}`;
 
@@ -135,9 +143,27 @@ async function settled(page, timeout = 20_000) {
 /** Sidebar-Text (Desktop-Navigation, nicht die mobile Leiste). */
 const sidebarText = (page) => page.locator("aside").first().innerText();
 
+/**
+ * Startet den Browser. Fehlt er, ist der Hinweis auf `playwright install`
+ * mehr wert als der rohe Playwright-Fehler.
+ */
+async function launchBrowser() {
+  try {
+    return await chromium.launch({
+      ...(CHROME ? { executablePath: CHROME } : {}),
+      args: ["--no-sandbox"],
+    });
+  } catch (error) {
+    console.error("\nBrowser konnte nicht gestartet werden.");
+    console.error("Einmalig einrichten:  npx playwright install chromium");
+    console.error("Eigener Pfad:         PLAYWRIGHT_CHROME=/pfad/zum/chrome npm run test:e2e\n");
+    throw error;
+  }
+}
+
 async function run() {
   const server = await startServer();
-  const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });
+  const browser = await launchBrowser();
 
   try {
     // ═══ A) Lernender ═══════════════════════════════════════════════════════
