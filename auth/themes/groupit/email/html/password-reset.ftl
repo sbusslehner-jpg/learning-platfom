@@ -39,6 +39,7 @@
     .sq-container { width:100% !important; max-width:100% !important; }
     .sq-pad { padding-left:20px !important; padding-right:20px !important; }
     .sq-h1 { font-size:22px !important; line-height:30px !important; }
+    .sq-btn { width:100% !important; }
     .sq-btn-link { display:block !important; text-align:center !important; }
   }
 
@@ -84,7 +85,7 @@
 
             <p class="sq-text" style="margin:0 0 28px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:26px;color:#3A424E;">${msg("sqResetIntro", realmName)}</p>
 
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
+            <table role="presentation" class="sq-btn" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
               <tr>
                 <td align="center" bgcolor="#00C8C1" style="background-color:#00C8C1;border-radius:8px;">
                   <a class="sq-btn-link" href="${link}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:20px;font-weight:600;color:#232830;text-decoration:none;border-radius:8px;">${msg("sqResetButton")}</a>
@@ -116,9 +117,9 @@
 
         <tr>
           <td class="sq-footer sq-pad" bgcolor="#F6F8FA" align="left" style="background-color:#F6F8FA;padding:20px 32px 0 32px;">
-            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8A93A0;">${msg("sqFooterAuto")}</p>
-            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8A93A0;">${msg("sqFooterNoReply")}</p>
-            <p class="sq-footer-text" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8A93A0;">${msg("sqFooterLegal")}</p>
+            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;">${msg("sqFooterAuto")}</p>
+            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;">${msg("sqFooterNoReply")}</p>
+            <p class="sq-footer-text" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;">${msg("sqFooterLegal")}</p>
           </td>
         </tr>
 

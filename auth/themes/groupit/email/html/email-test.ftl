@@ -85,9 +85,9 @@
 
         <tr>
           <td class="sq-footer sq-pad" bgcolor="#F6F8FA" align="left" style="background-color:#F6F8FA;padding:20px 32px 0 32px;">
-            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8A93A0;">${msg("sqFooterAuto")}</p>
-            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8A93A0;">${msg("sqFooterNoReply")}</p>
-            <p class="sq-footer-text" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#8A93A0;">${msg("sqFooterLegal")}</p>
+            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;">${msg("sqFooterAuto")}</p>
+            <p class="sq-footer-text" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;">${msg("sqFooterNoReply")}</p>
+            <p class="sq-footer-text" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#5A6472;">${msg("sqFooterLegal")}</p>
           </td>
         </tr>
 

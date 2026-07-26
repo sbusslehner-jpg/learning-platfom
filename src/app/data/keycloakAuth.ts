@@ -288,7 +288,11 @@ function bootstrap(): void {
 
   // Stille Erneuerung liefert einen neuen Access-Token → erneut austauschen.
   manager.events.addUserLoaded((user) => { void adoptUser(user); });
-  manager.events.addUserUnloaded(() => { publish("unauthenticated", null); });
+  // Während einer laufenden Abmeldung NICHT umschalten: `signoutRedirect()`
+  // entfernt den Benutzer, bevor es navigiert. Ein sofortiges
+  // "unauthenticated" würde den automatischen Absprung zur Anmeldung auslösen
+  // und die Abmeldung überholen (Rundlauf direkt zurück in die Sitzung).
+  manager.events.addUserUnloaded(() => { if (!signingOut) publish("unauthenticated", null); });
   manager.events.addSilentRenewError(() => {
     console.warn("[auth] Stille Erneuerung fehlgeschlagen.");
   });
@@ -312,10 +316,13 @@ if (KEYCLOAK_MODE) bootstrap();
 // ─── Öffentliche Aktionen (No-Op im Demo-Modus) ──────────────────────────────
 
 let redirecting = false;
+let signingOut = false;
 
 /** Weiterleitung zur Keycloak-Anmeldeseite. */
 export async function login(): Promise<void> {
-  if (!manager || redirecting) return;
+  // `signingOut`: eine laufende Abmeldung darf nicht von einer neuen Anmeldung
+  // überholt werden (siehe addUserUnloaded in bootstrap()).
+  if (!manager || redirecting || signingOut) return;
   redirecting = true;
   try {
     sessionStorage.removeItem(SIGNED_OUT_KEY);
@@ -362,6 +369,7 @@ export async function logout(): Promise<void> {
   supabaseTokenExpiresAt = null;
   lastExchangedToken = null;
   if (!manager) return;
+  signingOut = true;
   try {
     sessionStorage.setItem(SIGNED_OUT_KEY, "1");
   } catch { /* ignorieren */ }
@@ -371,6 +379,7 @@ export async function logout(): Promise<void> {
   try {
     await manager.signoutRedirect();
   } catch {
+    signingOut = false;
     console.warn("[auth] Abmeldung konnte nicht gestartet werden.");
     publish("unauthenticated", null);
   }
