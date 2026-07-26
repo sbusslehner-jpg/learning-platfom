@@ -203,7 +203,10 @@ if smtp_host:
 # solche Werte sonst wörtlich – aus einem Secret wird dann die Zeichenkette
 # "${PLATFORM_BACKEND_SECRET}", und die stimmt mit nichts überein.
 if generated:
-    leftovers = sorted(set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", json.dumps(data))))
+    # Nur GROSSGESCHRIEBENE Namen: das ist die Konvention für Umgebungsvariablen.
+    # Keycloak selbst verwendet ${username}, ${email} usw. als Textschlüssel für
+    # die Übersetzung – die sind hier erwünscht und dürfen nicht anschlagen.
+    leftovers = sorted(set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)\}", json.dumps(data))))
     if leftovers:
         raise SystemExit(
             "Fehler: unaufgeloeste Platzhalter in der erzeugten Realm-Datei: "

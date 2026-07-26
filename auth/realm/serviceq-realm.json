@@ -4,16 +4,17 @@
   "displayNameHtml": "<span style=\"color:#232830;font-weight:600\">ServiceQ</span> Lernplattform",
   "enabled": true,
   "sslRequired": "external",
-
   "loginTheme": "groupit",
   "emailTheme": "groupit",
   "accountTheme": "keycloak.v3",
   "adminTheme": "keycloak.v2",
-
   "internationalizationEnabled": true,
-  "supportedLocales": ["de", "en", "fr"],
+  "supportedLocales": [
+    "de",
+    "en",
+    "fr"
+  ],
   "defaultLocale": "de",
-
   "registrationAllowed": false,
   "resetPasswordAllowed": true,
   "rememberMe": true,
@@ -21,21 +22,17 @@
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "editUsernameAllowed": false,
-
   "bruteForceProtected": true,
   "permanentLockout": false,
   "maxFailureWaitSeconds": 900,
   "failureFactor": 10,
   "waitIncrementSeconds": 60,
-
   "passwordPolicy": "length(12) and notUsername(undefined) and notEmail(undefined) and upperCase(1) and lowerCase(1) and digits(1) and passwordHistory(3) and forceExpiredPasswordChange(365)",
-
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 43200,
   "actionTokenGeneratedByAdminLifespan": 259200,
   "offlineSessionIdleTimeout": 2592000,
-
   "smtpServer": {
     "host": "mailpit",
     "port": "1025",
@@ -48,7 +45,6 @@
     "starttls": "false",
     "auth": "false"
   },
-
   "attributes": {
     "frontendUrl": "",
     "adminEventsEnabled": "true",
@@ -56,9 +52,6 @@
     "eventsEnabled": "true",
     "eventsExpiration": "2592000"
   },
-
-  "unmanagedAttributePolicy": "ENABLED",
-
   "roles": {
     "realm": [
       {
@@ -78,9 +71,6 @@
       }
     ]
   },
-
-  "defaultRoles": ["user"],
-
   "clientScopes": [
     {
       "name": "academy",
@@ -123,14 +113,21 @@
       ]
     }
   ],
-
   "defaultDefaultClientScopes": [
-    "role_list", "profile", "email", "roles", "web-origins", "acr", "basic"
+    "role_list",
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "acr",
+    "basic"
   ],
   "defaultOptionalClientScopes": [
-    "offline_access", "address", "phone", "microprofile-jwt"
+    "offline_access",
+    "address",
+    "phone",
+    "microprofile-jwt"
   ],
-
   "clients": [
     {
       "clientId": "learning-platform",
@@ -164,9 +161,18 @@
         "post.logout.redirect.uris": "http://localhost:4321/*##http://localhost:5173/*##https://REPLACE-WITH-NETLIFY-SITE.netlify.app/*"
       },
       "defaultClientScopes": [
-        "web-origins", "acr", "profile", "roles", "basic", "email", "academy"
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email",
+        "academy"
       ],
-      "optionalClientScopes": ["offline_access", "microprofile-jwt"]
+      "optionalClientScopes": [
+        "offline_access",
+        "microprofile-jwt"
+      ]
     },
     {
       "clientId": "platform-backend",
@@ -183,10 +189,16 @@
       "attributes": {
         "use.refresh.tokens": "false"
       },
-      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email"]
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email"
+      ]
     }
   ],
-
   "users": [
     {
       "username": "admin@groupit.example",
@@ -196,9 +208,15 @@
       "enabled": true,
       "emailVerified": true,
       "attributes": {
-        "markets": ["DE,AT,CH,FR,PL,IT,ES,NL,CZ,SE"],
-        "tenant": ["PHS_AT"],
-        "locale": ["de"]
+        "markets": [
+          "DE,AT,CH,FR,PL,IT,ES,NL,CZ,SE"
+        ],
+        "tenant": [
+          "PHS_AT"
+        ],
+        "locale": [
+          "de"
+        ]
       },
       "credentials": [
         {
@@ -207,16 +225,40 @@
           "temporary": true
         }
       ],
-      "requiredActions": ["UPDATE_PASSWORD"],
-      "realmRoles": ["admin", "editor", "user"]
+      "requiredActions": [
+        "UPDATE_PASSWORD"
+      ],
+      "realmRoles": [
+        "admin",
+        "editor",
+        "user"
+      ]
     },
     {
       "username": "service-account-platform-backend",
       "enabled": true,
       "serviceAccountClientId": "platform-backend",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users", "query-users", "view-realm"]
+        "realm-management": [
+          "manage-users",
+          "view-users",
+          "query-users",
+          "view-realm"
+        ]
       }
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}], \"groups\": [{\"name\": \"user-metadata\", \"displayHeader\": \"User metadata\", \"displayDescription\": \"Attributes, which refer to user metadata\"}], \"unmanagedAttributePolicy\": \"ADMIN_EDIT\"}"
+          ]
+        }
+      }
+    ]
+  }
 }
