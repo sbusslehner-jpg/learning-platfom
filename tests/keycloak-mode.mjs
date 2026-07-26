@@ -125,9 +125,13 @@ async function run() {
     await check("PKCE aktiv: code_challenge_method S256", () =>
       assert(q.get("code_challenge_method") === "S256" && !!q.get("code_challenge"),
         `${q.get("code_challenge_method")} / challenge=${!!q.get("code_challenge")}`));
-    await check("scope enthält openid und academy", () => {
+    // Nur Scopes anfordern, die Keycloak selbst mitbringt. Ein eigener Scope
+    // im Realm-Import würde die eingebauten unterdrücken – dann fehlte `roles`
+    // im Token und sämtliche Rollenprüfungen liefen ins Leere.
+    await check("scope: openid profile email, kein eigener Scope", () => {
       const s = q.get("scope") ?? "";
-      assert(s.includes("openid") && s.includes("academy"), s);
+      assert(s.includes("openid") && s.includes("profile") && s.includes("email"), s);
+      assert(!s.includes("academy"), `eigener Scope angefordert: ${s}`);
     });
     await check("redirect_uri zeigt auf /auth/callback", () =>
       assert((q.get("redirect_uri") ?? "").includes("/auth/callback"), String(q.get("redirect_uri"))));

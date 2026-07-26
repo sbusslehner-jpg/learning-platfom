@@ -60,7 +60,12 @@ function buildManager(): UserManager | null {
     // Öffentlicher Client: Authorization Code + PKCE. oidc-client-ts erzeugt
     // Verifier/Challenge selbst (PKCE ist bei response_type=code Standard).
     response_type: "code",
-    scope: "openid profile email academy",
+    // `markets` und `tenant` kommen aus Protokoll-Mappern, die direkt am Client
+    // hängen – die laufen unabhängig vom angeforderten Scope. Einen eigenen
+    // `academy`-Scope anzufordern wäre nicht nur überflüssig: Ein Realm-Import
+    // mit eigenem `clientScopes`-Block unterdrückt Keycloaks eingebaute Scopes,
+    // und dann fehlte im Token ausgerechnet `roles`.
+    scope: "openid profile email",
     redirect_uri: window.location.origin + "/auth/callback",
     post_logout_redirect_uri: window.location.origin + "/login",
     // Stille Erneuerung, damit lange Lerneinheiten nicht mitten im Kapitel
