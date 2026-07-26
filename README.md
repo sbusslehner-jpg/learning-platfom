@@ -2,7 +2,7 @@
 
 Internationale Lernplattform für **ServiceQ**: Schulungsinhalte werden einmal in einer Master-Sprache erstellt, automatisch (Mistral API) in die Landessprachen von bis zu 30 Märkten übersetzt und den Nutzern der jeweiligen Märkte bereitgestellt.
 
-Dieses Repository enthält aktuell den **klickbaren UI-Prototyp** aus dem Figma-Make-Design „Lernplattform Designbriefing umsetzen" – alle 12 Screens aus dem Designbriefing als React-Anwendung.
+Die Anwendung setzt das Figma-Make-Design „Lernplattform Designbriefing umsetzen" um: Lernbereich, Redaktion und Verwaltung arbeiten auf einer Supabase-Datenbank, die Anmeldung läuft über Keycloak, Rollen und Sichtbarkeit werden serverseitig durchgesetzt. Stand der Produktionsreife: [docs/produktionsreife.md](docs/produktionsreife.md).
 
 ## Screens
 
@@ -31,7 +31,9 @@ npm run preview  # Build lokal testen
 
 ```
 docs/                       Konzept & UX/UI-Designbriefing
-src/app/App.tsx             Prototyp: alle Screens & Navigation
+auth/                       Keycloak-Stack: compose, Realm-Import, E-Mail-Theme
+netlify/functions/          Token-Austausch und Benutzer-Einladung
+src/app/App.tsx             Shell: Auth-Gate, Routen, Layout
 src/app/components/ui/      shadcn/ui-Komponentenbibliothek
 src/styles/                 Design-Tokens (GroupIT: Türkis #00C8C1, Anthrazit #3A424E)
 src/imports/                Assets aus Figma (GroupIT-Logo u. a.)
@@ -63,7 +65,9 @@ Ohne gesetzte `VITE_KEYCLOAK_*`-Variablen läuft die Anwendung weiter im Demo-Mo
 - **Eigene Domain:** Netlify → Domain management → Add a domain → DNS-Eintrag (CNAME auf die Netlify-Subdomain) setzen; HTTPS-Zertifikat stellt Netlify automatisch aus.
 - **Übersetzungs-Worker deployen:** siehe [docs/uebersetzung-worker.md](docs/uebersetzung-worker.md) (Mistral-Key als Supabase-Secret).
 - **Impressum & Datenschutz:** Die Platzhalter unter `/impressum` und `/datenschutz` durch juristisch geprüfte Texte ersetzen.
-- **Noch offen für den Produktivbetrieb:** echte Anmeldung (Supabase Auth) mit Markt-/Rollen-Sichtbarkeit, Redaktions-Schreibpfad, serverseitiger Lernfortschritt, Monitoring.
+- **Berechtigungen produktiv schalten:** `supabase/migrations/0005_production_rls.sql` einspielen (nimmt die Demo-Schreibrechte zurück) und die Kontrollabfrage ausführen – siehe [docs/keycloak-setup.md](docs/keycloak-setup.md), Abschnitt 6.
+- **Produktions-SMTP** für Keycloak samt SPF/DKIM/DMARC einrichten, sonst landen Einladungen im Spam.
+- **Noch offen:** serverseitiger Lernfortschritt, Datei-Uploads, Monitoring – Details in [docs/produktionsreife.md](docs/produktionsreife.md).
 
 ## Tests
 
