@@ -1,12 +1,30 @@
-import { useState } from "react";
+import { useState, type ElementType } from "react";
 import { FileText, Languages, Users, Settings, LogOut } from "lucide-react";
 import { BOTTOM_NAV, type Screen } from "../data/demo";
+import { useT } from "../i18n";
 
 // ─── Mobile Bottom Nav ────────────────────────────────────────────────────────
 
+// Beschriftungen kommen aus den UI-Wörterbüchern (die Daten in BOTTOM_NAV
+// liefern nur Reihenfolge, Ziel-Screen und Icon).
+const NAV_KEYS: Record<string, string> = {
+  dashboard: "nav.start",
+  catalog: "nav.catalog",
+  search: "nav.search",
+  profile: "nav.profile",
+};
+
 export function MobileBottomNav({ current, onNavigate }: { current: Screen; onNavigate: (s: Screen) => void }) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const { t } = useT();
   const isActive = (id: string) => current === id || (id === "dashboard" && current === "dashboard");
+
+  const PROFILE_ITEMS: { labelKey: string; icon: ElementType; screen: Screen }[] = [
+    { labelKey: "nav.content", icon: FileText, screen: "editor-tree" },
+    { labelKey: "nav.translations", icon: Languages, screen: "translations-overview" },
+    { labelKey: "nav.users", icon: Users, screen: "admin-users" },
+    { labelKey: "nav.settings", icon: Settings, screen: "admin-settings" },
+  ];
 
   return (
     <>
@@ -23,24 +41,20 @@ export function MobileBottomNav({ current, onNavigate }: { current: Screen; onNa
               </div>
             </div>
             <div className="py-1">
-              {[
-                { label: "Inhalte", icon: FileText, screen: "editor-tree" as Screen },
-                { label: "Übersetzungen", icon: Languages, screen: "translations-overview" as Screen },
-                { label: "Benutzer", icon: Users, screen: "admin-users" as Screen },
-                { label: "Einstellungen", icon: Settings, screen: "admin-settings" as Screen },
-              ].map(item => {
+              {PROFILE_ITEMS.map(item => {
                 const Icon = item.icon;
+                const label = t(item.labelKey);
                 return (
-                  <button key={item.label}
+                  <button key={item.labelKey}
                     onClick={() => { onNavigate(item.screen); setProfileOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-[14px] text-[#3A424E] hover:bg-[#E6FAF9] hover:text-[#007D78] transition-colors">
-                    <Icon size={17} />{item.label}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-[14px] text-[#3A424E] hover:bg-[#E6FAF9] hover:text-[#007D78] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
+                    <Icon size={17} aria-hidden />{label}
                   </button>
                 );
               })}
               <div className="border-t border-[#EEF1F4] mt-1 pt-1">
-                <button className="w-full flex items-center gap-3 px-4 py-3 text-[14px] text-[#B42318] hover:bg-[#FDEEEC] transition-colors">
-                  <LogOut size={17} />Abmelden
+                <button className="w-full flex items-center gap-3 px-4 py-3 text-[14px] text-[#B42318] hover:bg-[#FDEEEC] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
+                  <LogOut size={17} aria-hidden />{t("common.logout")}
                 </button>
               </div>
             </div>
@@ -52,14 +66,20 @@ export function MobileBottomNav({ current, onNavigate }: { current: Screen; onNa
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {BOTTOM_NAV.map(({ id, label, icon: Icon }) => {
           const active = isActive(id) || (id === "profile" && profileOpen);
+          const text = NAV_KEYS[id] ? t(NAV_KEYS[id]) : label;
           return (
             <button key={id}
-              onClick={() => id === "profile" ? setProfileOpen(!profileOpen) : id === "search" ? undefined : onNavigate(id as Screen)}
-              className="flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors"
-              aria-label={label}
+              // "Suche" hat (noch) keinen eigenen Screen – der Tab führt in den
+              // Katalog, damit kein Reiter ohne Wirkung bleibt.
+              onClick={() => id === "profile" ? setProfileOpen(!profileOpen) : id === "search" ? onNavigate("catalog") : onNavigate(id as Screen)}
+              className="flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
+              aria-label={text}
+              aria-current={active && id !== "profile" ? "page" : undefined}
+              aria-expanded={id === "profile" ? profileOpen : undefined}
+              aria-haspopup={id === "profile" ? "menu" : undefined}
             >
-              <Icon size={22} style={{ color: active ? "#00C8C1" : "#8A93A0" }} />
-              <span className={`text-[10px] font-medium ${active ? "text-[#007D78]" : "text-[#8A93A0]"}`}>{label}</span>
+              <Icon size={22} style={{ color: active ? "#00C8C1" : "#8A93A0" }} aria-hidden />
+              <span className={`text-[10px] font-medium ${active ? "text-[#007D78]" : "text-[#8A93A0]"}`}>{text}</span>
             </button>
           );
         })}

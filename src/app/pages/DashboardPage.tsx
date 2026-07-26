@@ -1,7 +1,9 @@
+import { useMemo } from "react";
 import { ArrowRight, Clock } from "lucide-react";
 import { ProgressRing } from "../components/ProgressRing";
 import type { Screen } from "../data/demo";
 import { fetchDashboardLists, useSupabaseData } from "../data/api";
+import { useT } from "../i18n";
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -18,12 +20,32 @@ const FALLBACK_LISTS = {
   ],
 };
 
+// Statuswerte kommen als deutsche Datenwerte aus der Datenbank; für die Anzeige
+// werden sie auf i18n-Schlüssel abgebildet (Daten selbst bleiben unverändert).
+const STATUS_KEYS: Record<string, string> = {
+  offen: "learn.status.open",
+  begonnen: "learn.status.started",
+  abgeschlossen: "learn.status.done",
+};
+
+const LEARNER_NAME = "Max";
+
 export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   const { fresh, mine } = useSupabaseData(fetchDashboardLists, FALLBACK_LISTS);
+  const { t, lang } = useT();
+
+  // Datum folgt der gewählten Oberflächensprache (kein hartcodiertes Datum).
+  const today = useMemo(
+    () => new Date().toLocaleDateString(lang, { weekday: "long", day: "numeric", month: "long", year: "numeric" }),
+    [lang],
+  );
+
+  const statusLabel = (status: string) => (STATUS_KEYS[status] ? t(STATUS_KEYS[status]) : status);
+
   return (
     <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-      <h1 className="text-[28px] font-semibold text-[#232830] mb-1">Guten Morgen, Max!</h1>
-      <p className="text-[15px] text-[#5A6472] mb-8">Montag, 21. Juli 2026</p>
+      <h1 className="text-[28px] font-semibold text-[#232830] mb-1">{t("learn.greeting")}, {LEARNER_NAME}!</h1>
+      <p className="text-[15px] text-[#5A6472] mb-8">{today}</p>
 
       {/* Weiterlernen hero */}
       <div className="bg-white rounded-xl border border-[#C3C9D1] p-6 mb-8 flex items-center gap-6 shadow-sm hover:shadow-md transition-shadow">
@@ -32,18 +54,18 @@ export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
           <span className="absolute inset-0 flex items-center justify-center text-[15px] font-bold text-[#232830]">62%</span>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[11px] font-semibold text-[#5A6472] uppercase tracking-wider mb-1">Zuletzt geöffnet · ServiceQ</div>
+          <div className="text-[11px] font-semibold text-[#5A6472] uppercase tracking-wider mb-1">{t("learn.lastOpened")} · ServiceQ</div>
           <h2 className="text-[20px] font-semibold text-[#232830] leading-tight mb-1">DSR – Konfiguration im Einzelhandel</h2>
-          <p className="text-[14px] text-[#5A6472]">Kapitel 3: DealerData-Synchronisation · ca. 12 Min.</p>
+          <p className="text-[14px] text-[#5A6472]">{t("learn.chapter")} 3: DealerData-Synchronisation · ca. 12 Min.</p>
         </div>
         <button
           onClick={() => onNavigate("learning")}
-          className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-[15px] transition-all"
+          className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-[15px] transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
           style={{ backgroundColor: "#00C8C1", color: "#232830" }}
           onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#00B3AC")}
           onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#00C8C1")}
         >
-          Weiterlernen <ArrowRight size={16} />
+          {t("learn.continue")} <ArrowRight size={16} />
         </button>
       </div>
 
@@ -51,21 +73,21 @@ export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Neu für dich */}
         <div className="xl:col-span-1">
-          <h2 className="text-[17px] font-semibold text-[#232830] mb-4">Neu für dich</h2>
+          <h2 className="text-[17px] font-semibold text-[#232830] mb-4">{t("learn.newForYou")}</h2>
           <div className="space-y-3">
-            {fresh.map(t => (
-              <button key={t.title} onClick={() => onNavigate("learning")}
-                className="w-full text-left bg-white rounded-lg border border-[#C3C9D1] p-4 hover:border-[#00C8C1] hover:shadow-sm transition-all group">
+            {fresh.map(item => (
+              <button key={item.title} onClick={() => onNavigate("learning")}
+                className="w-full text-left bg-white rounded-lg border border-[#C3C9D1] p-4 hover:border-[#00C8C1] hover:shadow-sm transition-all group focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-semibold text-[#5A6472] uppercase tracking-wide">ServiceQ · {t.module}</span>
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#EBF1FE] text-[#1D5BD6]">Neu</span>
+                      <span className="text-[10px] font-semibold text-[#5A6472] uppercase tracking-wide">ServiceQ · {item.module}</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#EBF1FE] text-[#1D5BD6]">{t("learn.new")}</span>
                     </div>
-                    <p className="text-[14px] font-semibold text-[#232830] group-hover:text-[#007D78] transition-colors leading-snug">{t.title}</p>
-                    <div className="flex items-center gap-1 mt-1.5 text-[12px] text-[#5A6472]"><Clock size={11} />{t.duration}</div>
+                    <p className="text-[14px] font-semibold text-[#232830] group-hover:text-[#007D78] transition-colors leading-snug">{item.title}</p>
+                    <div className="flex items-center gap-1 mt-1.5 text-[12px] text-[#5A6472]"><Clock size={11} aria-hidden />{item.duration}</div>
                   </div>
-                  <ArrowRight size={16} className="text-[#C3C9D1] group-hover:text-[#00C8C1] transition-colors mt-1 shrink-0" />
+                  <ArrowRight size={16} aria-hidden className="text-[#C3C9D1] group-hover:text-[#00C8C1] transition-colors mt-1 shrink-0" />
                 </div>
               </button>
             ))}
@@ -75,23 +97,23 @@ export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
         {/* Meine Trainings */}
         <div className="xl:col-span-2">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[17px] font-semibold text-[#232830]">Meine Trainings</h2>
-            <button onClick={() => onNavigate("catalog")} className="text-[13px] text-[#007D78] hover:underline">Alle anzeigen</button>
+            <h2 className="text-[17px] font-semibold text-[#232830]">{t("learn.myTrainings")}</h2>
+            <button onClick={() => onNavigate("catalog")} className="text-[13px] text-[#007D78] hover:underline rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">{t("learn.showAll")}</button>
           </div>
           <div className="space-y-3">
-            {mine.map(t => (
-              <button key={t.title} onClick={() => onNavigate("learning")}
-                className="w-full text-left bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 hover:border-[#00C8C1] hover:shadow-sm transition-all group flex items-center gap-4">
+            {mine.map(item => (
+              <button key={item.title} onClick={() => onNavigate("learning")}
+                className="w-full text-left bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 hover:border-[#00C8C1] hover:shadow-sm transition-all group flex items-center gap-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
                 <div className="relative shrink-0">
-                  <ProgressRing percent={t.progress} size={40} stroke={3} />
-                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-[#3A424E]">{t.progress}%</span>
+                  <ProgressRing percent={item.progress} size={40} stroke={3} />
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-[#3A424E]">{item.progress}%</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-semibold text-[#232830] group-hover:text-[#007D78] transition-colors truncate">{t.title}</p>
-                  <p className="text-[12px] text-[#5A6472] mt-0.5">ServiceQ · {t.module}</p>
+                  <p className="text-[14px] font-semibold text-[#232830] group-hover:text-[#007D78] transition-colors truncate">{item.title}</p>
+                  <p className="text-[12px] text-[#5A6472] mt-0.5">ServiceQ · {item.module}</p>
                 </div>
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${t.status === "abgeschlossen" ? "bg-[#EAF8F0] text-[#15803D]" : t.status === "begonnen" ? "bg-[#EBF1FE] text-[#1D5BD6]" : "bg-[#EEF1F4] text-[#5A6472]"}`}>
-                  {t.status}
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${item.status === "abgeschlossen" ? "bg-[#EAF8F0] text-[#15803D]" : item.status === "begonnen" ? "bg-[#EBF1FE] text-[#1D5BD6]" : "bg-[#EEF1F4] text-[#5A6472]"}`}>
+                  {statusLabel(item.status)}
                 </span>
               </button>
             ))}

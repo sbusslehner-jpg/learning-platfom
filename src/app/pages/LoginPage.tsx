@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { Link } from "react-router";
-import { AlertCircle, Eye } from "lucide-react";
+import { AlertCircle, Eye, ShieldAlert } from "lucide-react";
 import logo from "../../imports/GroupIT_Logo.png";
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
@@ -13,14 +13,16 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
   const [loading, setLoading] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
+  // ⚠️  Demo-Anmeldung: Es findet KEINE Prüfung von Zugangsdaten statt.
+  //     Im Produktivbetrieb entfällt diese Seite vollständig – der Zugang
+  //     erfolgt ausschließlich über den ServiceQ-Absprung (SSO-Handshake,
+  //     siehe docs/serviceq-academy/). Die Rollenauswahl nach dem Einstieg
+  //     dient nur der Vorführung der Berechtigungslogik.
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) { setError("Bitte E-Mail und Passwort eingeben."); emailRef.current?.focus(); return; }
     setLoading(true); setError("");
-    await new Promise(r => setTimeout(r, 800));
-    if (email === "wrong@example.com") {
-      setError("E-Mail oder Passwort ist nicht korrekt."); setLoading(false); emailRef.current?.focus(); return;
-    }
+    await new Promise(r => setTimeout(r, 400));
     onLogin();
   };
 
@@ -35,7 +37,16 @@ export function LoginScreen({ onLogin }: { onLogin: () => void }) {
           {/* Form */}
           <div className="px-8 py-8">
             <h1 className="text-[22px] font-semibold text-[#232830] mb-1">Anmelden</h1>
-            <p className="text-[14px] text-[#5A6472] mb-6">ServiceQ Lernplattform</p>
+            <p className="text-[14px] text-[#5A6472] mb-4">ServiceQ Lernplattform</p>
+
+            {/* Ehrlicher Hinweis: keine echte Authentifizierung in dieser Demo */}
+            <div className="flex items-start gap-2 bg-[#FDF3E4] text-[#B45309] rounded-lg px-3 py-2.5 text-[12px] mb-5 leading-snug">
+              <ShieldAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
+              <span>
+                <strong>Demo-Zugang.</strong> Zugangsdaten werden nicht geprüft. Im Produktivbetrieb
+                erfolgt der Einstieg ausschließlich über ServiceQ.
+              </span>
+            </div>
 
             {error && (
               <div className="flex items-start gap-2 bg-[#FDEEEC] text-[#B42318] border border-[#B42318]/20 rounded-lg px-4 py-3 text-[14px] mb-5">

@@ -8,6 +8,8 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { SSO_MODE, useAcademyAuth } from "./data/academyAuth";
 import type { NavHandler, Screen } from "./data/demo";
+import { useRoles } from "./data/roles";
+import { ReportingPage } from "./pages/ReportingPage";
 import { AdminMarkets } from "./pages/AdminMarketsPage";
 import { AdminSettings } from "./pages/AdminSettingsPage";
 import { AdminUsers } from "./pages/AdminUsersPage";
@@ -38,6 +40,7 @@ export const SCREEN_PATHS: Record<Screen, string> = {
   "admin-users":           "/verwaltung/benutzer",
   "admin-markets":         "/verwaltung/maerkte",
   "admin-settings":        "/verwaltung/einstellungen",
+  "reporting":             "/auswertungen",
 };
 
 // Aktiven Screen aus dem Pfad ableiten (längster passender Präfix gewinnt,
@@ -72,10 +75,23 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const ssoState = useAcademyAuth();
+  const { canScreen } = useRoles();
 
   const screen: Screen = screenFromPath(location.pathname);
   const onNavigate: NavHandler = (s, param) =>
     navigate(param ? `${SCREEN_PATHS[s]}/${param}` : SCREEN_PATHS[s]);
+
+  /** Route nur rendern, wenn die aktive Rolle die Berechtigung hat.
+   *  Sonst zurück auf den Start – kein Zugriff auf fremde Bereiche über die URL. */
+  const guard = (s: Screen, element: React.ReactNode) =>
+    canScreen(s) ? element : <Navigate to="/" replace />;
+
+  /** Abmelden: im SSO-Modus serverseitig, sonst zurück zur Demo-Anmeldung. */
+  const handleLogout = () => {
+    if (SSO_MODE) { window.location.assign("/sso/expired"); return; }
+    setLoggedIn(false);
+    navigate(SCREEN_PATHS["login"]);
+  };
 
   // Im SSO-Modus entscheidet die echte Session; im Demo-Modus der Login-Boolean.
   const authed = SSO_MODE ? ssoState === "authenticated" : loggedIn;
@@ -104,19 +120,24 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ fontFamily: "Inter, 'Noto Sans', system-ui, sans-serif", backgroundColor: "#F6F8FA" }}>
       <Toaster position="bottom-right" richColors />
-      <Topbar onMenuToggle={() => setMobileOpen(!mobileOpen)} collapsed={collapsed} />
+      <Topbar
+        onMenuToggle={() => setMobileOpen(!mobileOpen)}
+        collapsed={collapsed}
+        onOpenTraining={(slug) => onNavigate("learning", slug)}
+        onLogout={handleLogout}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop sidebar */}
         <div className="hidden lg:flex">
-          <Sidebar current={screen} onNavigate={onNavigate} collapsed={collapsed} />
+          <Sidebar current={screen} onNavigate={onNavigate} collapsed={collapsed} onLogout={handleLogout} />
         </div>
 
         {/* Mobile sidebar overlay */}
         {mobileOpen && (
           <>
             <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setMobileOpen(false)} />
-            <Sidebar current={screen} onNavigate={onNavigate} collapsed={false} mobile onClose={() => setMobileOpen(false)} />
+            <Sidebar current={screen} onNavigate={onNavigate} collapsed={false} mobile onClose={() => setMobileOpen(false)} onLogout={handleLogout} />
           </>
         )}
 
@@ -138,15 +159,16 @@ export default function App() {
             <Route path={SCREEN_PATHS["training-overview"]} element={<TrainingOverview onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["learning"]} element={<LearningView onNavigate={onNavigate} />} />
             <Route path={SCREEN_PATHS["learning"] + "/:slug"} element={<LearningView onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["editor-tree"]} element={<EditorTree onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["editor-content"]} element={<EditorContent onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["editor-content"] + "/:trainingId"} element={<EditorContent onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["translations-overview"]} element={<TranslationsOverview onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["translations-review"]} element={<TranslationReview onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["translations-review"] + "/:trainingId/:lang"} element={<TranslationReview onNavigate={onNavigate} />} />
-            <Route path={SCREEN_PATHS["admin-users"]} element={<AdminUsers />} />
-            <Route path={SCREEN_PATHS["admin-markets"]} element={<AdminMarkets />} />
-            <Route path={SCREEN_PATHS["admin-settings"]} element={<AdminSettings />} />
+            <Route path={SCREEN_PATHS["editor-tree"]} element={guard("editor-tree", <EditorTree onNavigate={onNavigate} />)} />
+            <Route path={SCREEN_PATHS["editor-content"]} element={guard("editor-content", <EditorContent onNavigate={onNavigate} />)} />
+            <Route path={SCREEN_PATHS["editor-content"] + "/:trainingId"} element={guard("editor-content", <EditorContent onNavigate={onNavigate} />)} />
+            <Route path={SCREEN_PATHS["translations-overview"]} element={guard("translations-overview", <TranslationsOverview onNavigate={onNavigate} />)} />
+            <Route path={SCREEN_PATHS["translations-review"]} element={guard("translations-review", <TranslationReview onNavigate={onNavigate} />)} />
+            <Route path={SCREEN_PATHS["translations-review"] + "/:trainingId/:lang"} element={guard("translations-review", <TranslationReview onNavigate={onNavigate} />)} />
+            <Route path={SCREEN_PATHS["reporting"]} element={guard("reporting", <ReportingPage />)} />
+            <Route path={SCREEN_PATHS["admin-users"]} element={guard("admin-users", <AdminUsers />)} />
+            <Route path={SCREEN_PATHS["admin-markets"]} element={guard("admin-markets", <AdminMarkets />)} />
+            <Route path={SCREEN_PATHS["admin-settings"]} element={guard("admin-settings", <AdminSettings />)} />
             <Route path="/impressum" element={<Impressum />} />
             <Route path="/datenschutz" element={<Datenschutz />} />
             <Route path="/sso/expired" element={<SessionExpiredPage />} />

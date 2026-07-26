@@ -1,6 +1,6 @@
 import {
   Home, BookOpen, FileText, Languages, Users, Settings,
-  Search, User, Play, CheckCircle2,
+  Search, User, Play, CheckCircle2, BarChart3,
   PencilLine, AlertCircle, History, Sparkles, Lock, CircleDashed,
   BookMarked, Map, Eye,
 } from "lucide-react";
@@ -11,7 +11,7 @@ export type Screen =
   | "login" | "dashboard" | "catalog" | "training-overview"
   | "learning" | "editor-tree" | "editor-content"
   | "translations-overview" | "translations-review"
-  | "admin-users" | "admin-markets" | "admin-settings";
+  | "admin-users" | "admin-markets" | "admin-settings" | "reporting";
 
 export type Status = "draft" | "published" | "outdated" | "missing" | "auto" | "corrected" | "error";
 
@@ -32,14 +32,23 @@ export const STATUS: Record<Status, { label: string; icon: React.ReactNode; bg: 
 
 // ─── Demo datasets ────────────────────────────────────────────────────────────
 
+// Navigation mit i18n-Schlüsseln (`labelKey`) und Berechtigungsangabe.
+// `label` bleibt als deutscher Fallback erhalten.
 export const NAV_ITEMS = [
-  { section: "Lernen",      items: [{ id: "dashboard",    label: "Start",              icon: Home },
-                                     { id: "catalog",      label: "Katalog",            icon: BookOpen }] },
-  { section: "Redaktion",   items: [{ id: "editor-tree",  label: "Inhalte",            icon: FileText },
-                                     { id: "translations-overview", label: "Übersetzungen", icon: Languages }] },
-  { section: "Verwaltung",  items: [{ id: "admin-users",  label: "Benutzer",           icon: Users },
-                                     { id: "admin-markets",label: "Märkte & Sprachen",  icon: Map },
-                                     { id: "admin-settings",label: "Einstellungen",     icon: Settings }] },
+  { section: "Lernen", sectionKey: "nav.learn", items: [
+    { id: "dashboard", label: "Start", labelKey: "nav.start", icon: Home },
+    { id: "catalog", label: "Katalog", labelKey: "nav.catalog", icon: BookOpen },
+  ]},
+  { section: "Redaktion", sectionKey: "nav.editorial", items: [
+    { id: "editor-tree", label: "Inhalte", labelKey: "nav.content", icon: FileText },
+    { id: "translations-overview", label: "Übersetzungen", labelKey: "nav.translations", icon: Languages },
+  ]},
+  { section: "Verwaltung", sectionKey: "nav.admin", items: [
+    { id: "reporting", label: "Auswertungen", labelKey: "nav.reporting", icon: BarChart3 },
+    { id: "admin-users", label: "Benutzer", labelKey: "nav.users", icon: Users },
+    { id: "admin-markets", label: "Märkte & Sprachen", labelKey: "nav.markets", icon: Map },
+    { id: "admin-settings", label: "Einstellungen", labelKey: "nav.settings", icon: Settings },
+  ]},
 ];
 
 export const CHAPTERS = [

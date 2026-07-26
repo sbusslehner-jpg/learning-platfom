@@ -519,3 +519,241 @@ export async function fetchTrainingLanguages(trainingId: string): Promise<{ code
   const nameMap = new Map((names as any[] ?? []).map(n => [n.code, n.name]));
   return codes.map(code => ({ code, name: nameMap.get(code) ?? code }));
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// VERWALTUNG – Benutzer, Märkte, Sprachen, Einstellungen
+// (Demo: anon-Schreibzugriff über 0004; produktiv auf Admin-Rolle einschränken)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type AdminUser = {
+  id: string;
+  name: string;
+  email: string | null;
+  roles: string[];
+  markets: string[];      // Marktcodes
+  marketIds: string[];
+  active: boolean;
+  lastActive: string | null;
+};
+
+export async function fetchUsers(): Promise<AdminUser[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("app_user")
+    .select("id, name, email, active, last_active_at, user_role_assignment(role), user_market(market_id, market(code))")
+    .order("name");
+  if (error || !data) return null;
+  return (data as any[]).map(u => ({
+    id: u.id,
+    name: u.name ?? "—",
+    email: u.email,
+    roles: (u.user_role_assignment ?? []).map((r: any) => r.role),
+    markets: (u.user_market ?? []).map((m: any) => m.market?.code).filter(Boolean),
+    marketIds: (u.user_market ?? []).map((m: any) => m.market_id),
+    active: u.active !== false,
+    lastActive: u.last_active_at,
+  }));
+}
+
+export async function createUser(input: {
+  name: string; email: string; roles: string[]; marketIds: string[]; uiLanguage?: string;
+}): Promise<{ ok: boolean; message?: string }> {
+  if (!supabase) return { ok: false, message: "Keine Datenbankverbindung" };
+  const { data, error } = await supabase.from("app_user")
+    .insert({ name: input.name, email: input.email || null, ui_language: input.uiLanguage ?? "de" })
+    .select("id").single();
+  if (error || !data) return { ok: false, message: error?.message ?? "Benutzer konnte nicht angelegt werden" };
+  const id = (data as any).id;
+  if (input.roles.length) {
+    await supabase.from("user_role_assignment").insert(input.roles.map(role => ({ user_id: id, role })));
+  }
+  if (input.marketIds.length) {
+    await supabase.from("user_market").insert(input.marketIds.map(market_id => ({ user_id: id, market_id })));
+  }
+  return { ok: true };
+}
+
+export async function setUserActive(userId: string, active: boolean): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("app_user").update({ active }).eq("id", userId);
+  return !error;
+}
+
+export async function setUserRoles(userId: string, roles: string[]): Promise<boolean> {
+  if (!supabase) return false;
+  await supabase.from("user_role_assignment").delete().eq("user_id", userId);
+  if (!roles.length) return true;
+  const { error } = await supabase.from("user_role_assignment")
+    .insert(roles.map(role => ({ user_id: userId, role })));
+  return !error;
+}
+
+export async function setUserMarkets(userId: string, marketIds: string[]): Promise<boolean> {
+  if (!supabase) return false;
+  await supabase.from("user_market").delete().eq("user_id", userId);
+  if (!marketIds.length) return true;
+  const { error } = await supabase.from("user_market")
+    .insert(marketIds.map(market_id => ({ user_id: userId, market_id })));
+  return !error;
+}
+
+export async function deleteUser(userId: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("app_user").delete().eq("id", userId);
+  return !error;
+}
+
+// ─── Märkte & Sprachen ───────────────────────────────────────────────────────
+
+export type AdminMarket = {
+  id: string; code: string; name: string;
+  languages: string[]; defaultLanguage: string | null; trainings: number;
+};
+
+export async function fetchAdminMarkets(): Promise<AdminMarket[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("market")
+    .select("id, code, name, market_language(language_code, is_default), training_market(training_id)")
+    .order("code");
+  if (error || !data) return null;
+  return (data as any[]).map(m => ({
+    id: m.id, code: m.code, name: m.name,
+    languages: (m.market_language ?? []).map((l: any) => l.language_code),
+    defaultLanguage: (m.market_language ?? []).find((l: any) => l.is_default)?.language_code ?? null,
+    trainings: (m.training_market ?? []).length,
+  }));
+}
+
+export async function fetchLanguages(): Promise<{ code: string; name: string }[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("language").select("code, name").order("name");
+  if (error || !data) return null;
+  return data as any[];
+}
+
+export async function createMarket(input: {
+  code: string; name: string; languages: string[]; defaultLanguage: string;
+}): Promise<{ ok: boolean; message?: string }> {
+  if (!supabase) return { ok: false, message: "Keine Datenbankverbindung" };
+  const { data, error } = await supabase.from("market")
+    .insert({ code: input.code.toUpperCase(), name: input.name }).select("id").single();
+  if (error || !data) return { ok: false, message: error?.message ?? "Markt konnte nicht angelegt werden" };
+  const id = (data as any).id;
+  const rows = input.languages.map(language_code => ({
+    market_id: id, language_code, is_default: language_code === input.defaultLanguage,
+  }));
+  if (rows.length) {
+    const { error: lErr } = await supabase.from("market_language").insert(rows);
+    if (lErr) return { ok: false, message: lErr.message };
+  }
+  return { ok: true };
+}
+
+export async function updateMarketLanguages(
+  marketId: string, languages: string[], defaultLanguage: string,
+): Promise<boolean> {
+  if (!supabase) return false;
+  await supabase.from("market_language").delete().eq("market_id", marketId);
+  if (!languages.length) return true;
+  const { error } = await supabase.from("market_language").insert(
+    languages.map(language_code => ({
+      market_id: marketId, language_code, is_default: language_code === defaultLanguage,
+    })),
+  );
+  return !error;
+}
+
+export async function updateMarketName(marketId: string, name: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("market").update({ name }).eq("id", marketId);
+  return !error;
+}
+
+export async function deleteMarket(marketId: string): Promise<{ ok: boolean; message?: string }> {
+  if (!supabase) return { ok: false, message: "Keine Datenbankverbindung" };
+  const { error } = await supabase.from("market").delete().eq("id", marketId);
+  if (error) return { ok: false, message: "Markt ist noch zugeordnet und kann nicht gelöscht werden." };
+  return { ok: true };
+}
+
+// ─── Anwendungseinstellungen (nicht-geheim, app_setting) ─────────────────────
+
+export async function fetchAppSettings(): Promise<Record<string, any> | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("app_setting").select("key, value");
+  if (error || !data) return null;
+  const out: Record<string, any> = {};
+  for (const r of data as any[]) out[r.key] = r.value;
+  return out;
+}
+
+export async function saveAppSetting(key: string, value: any): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("app_setting")
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+  return !error;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// REPORTING – ausschließlich aggregiert (kein personenbezogenes Lern-Reporting)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type ContentHealthRow = {
+  product: string; module: string;
+  trainings_total: number; trainings_published: number; trainings_draft: number; chapters_total: number;
+};
+export type TranslationHealthRow = {
+  language_code: string; language_name: string;
+  fields_total: number; fields_current: number; fields_outdated: number; fields_error: number; fields_missing: number;
+};
+export type MarketCoverageRow = {
+  market_code: string; market_name: string; trainings_assigned: number; languages: number; users: number;
+};
+export type ActivityRow = {
+  active_learners: number; chapters_completed: number; completed_last_7d: number; completed_last_30d: number;
+};
+
+export async function fetchContentHealth(): Promise<ContentHealthRow[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("report_content_health").select("*");
+  if (error || !data) return null;
+  return data as any[];
+}
+
+export async function fetchTranslationHealth(): Promise<TranslationHealthRow[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("report_translation_health").select("*");
+  if (error || !data) return null;
+  return data as any[];
+}
+
+export async function fetchMarketCoverage(): Promise<MarketCoverageRow[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("report_market_coverage").select("*");
+  if (error || !data) return null;
+  return data as any[];
+}
+
+export async function fetchLearningActivity(): Promise<ActivityRow | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("report_learning_activity").select("*").maybeSingle();
+  if (error || !data) return null;
+  return data as any;
+}
+
+// ─── Suche (Trainings, für die Topbar) ───────────────────────────────────────
+
+export type SearchHit = { slug: string; title: string; module: string | null };
+
+export async function searchTrainings(query: string): Promise<SearchHit[] | null> {
+  if (!supabase || query.length < 2) return null;
+  const { data, error } = await supabase
+    .from("training")
+    .select("slug, title, module(title)")
+    .eq("status", "published")
+    .ilike("title", `%${query}%`)
+    .limit(8);
+  if (error || !data) return null;
+  return (data as any[]).map(t => ({ slug: t.slug, title: t.title, module: t.module?.title ?? null }));
+}
