@@ -45,6 +45,10 @@ const mock = {
     { id: "11111111-1111-4111-8111-111111111111", code: "DE" },
     { id: "22222222-2222-4222-8222-222222222222", code: "AT" },
   ],
+  // Mail-Einstellungen im Realm (admin-smtp)
+  smtpServer: { host: "mailpit", port: "1025", from: "noreply@groupit.example", auth: "false" },
+  realmUpdateStatus: 204,
+  smtpTestStatus: 204,
 };
 
 function record(entry) {
@@ -153,6 +157,30 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, hit ? [hit] : []);
     }
 
+    // Realm-Darstellung: lesen und schreiben (Mail-Einstellungen)
+    if (suffix === "") {
+      if (method === "GET") {
+        return sendJson(res, 200, { realm, displayName: "ServiceQ", smtpServer: mock.smtpServer });
+      }
+      if (method === "PUT") {
+        if (mock.realmUpdateStatus >= 400) {
+          return sendJson(res, mock.realmUpdateStatus, { error: "denied" });
+        }
+        if (body?.smtpServer) mock.smtpServer = body.smtpServer;
+        res.writeHead(mock.realmUpdateStatus);
+        return res.end();
+      }
+    }
+
+    // Verbindungstest des Mailservers
+    if (method === "POST" && suffix === "/testSMTPConnection") {
+      if (mock.smtpTestStatus >= 400) {
+        return sendJson(res, mock.smtpTestStatus, { errorMessage: "Connection refused" });
+      }
+      res.writeHead(mock.smtpTestStatus);
+      return res.end();
+    }
+
     return sendJson(res, 404, { error: "unhandled admin route", suffix, method });
   }
 
@@ -195,6 +223,7 @@ process.env.PLATFORM_URL = "https://lernen.example.com";
 
 const { handler: exchangeHandler } = await import("../netlify/functions/auth-exchange.mjs");
 const { handler: inviteHandler } = await import("../netlify/functions/admin-invite.mjs");
+const { handler: smtpHandler } = await import("../netlify/functions/admin-smtp.mjs");
 
 after(() => {
   server.closeAllConnections?.();
@@ -210,6 +239,9 @@ beforeEach(() => {
   mock.appUserActive = true;
   mock.rolesKnown = new Set(["admin", "editor", "user"]);
   mock.usersByEmail = new Map();
+  mock.smtpServer = { host: "mailpit", port: "1025", from: "noreply@groupit.example", auth: "false" };
+  mock.realmUpdateStatus = 204;
+  mock.smtpTestStatus = 204;
 });
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -860,4 +892,158 @@ test("Austausch: aktives Konto erhält weiterhin ein Token", async () => {
   const res = await exchangeHandler(eventFor(await mintToken({})));
   assert.equal(res.statusCode, 200);
   assert.ok(parse(res).token, "Token fehlt");
+});
+
+// ── Mail-Einstellungen (admin-smtp) ──────────────────────────────────────────
+// Schwerpunkt: Adminpflicht, Schutz des Passworts und die Frage, wer den
+// Empfänger des Testversands bestimmt.
+describe("Mail-Einstellungen /api/admin/smtp", () => {
+  const smtpEvent = (token, { method = "GET", path = "/api/admin/smtp", body } = {}) => ({
+    httpMethod: method,
+    path,
+    rawUrl: `https://lernen.example.com${path}`,
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    body: body === undefined ? null : JSON.stringify(body),
+    isBase64Encoded: false,
+  });
+
+  const VALID = {
+    host: "smtp.example.net",
+    port: "587",
+    from: "noreply@example.net",
+    fromDisplayName: "Lernplattform",
+    encryption: "starttls",
+    auth: true,
+    user: "postfach",
+    password: "geheim",
+  };
+
+  test("ohne Token abgewiesen", async () => {
+    const response = await smtpHandler(smtpEvent(null));
+    assert.equal(response.statusCode, 401);
+    assert.equal(callsTo("GET", `/admin/realms/${realm}`).length, 0);
+  });
+
+  test("Lernender darf nicht lesen", async () => {
+    const token = await mintToken({ roles: ["user", "editor"] });
+    const response = await smtpHandler(smtpEvent(token));
+    assert.equal(response.statusCode, 403);
+    assert.equal(parse(response).code, "FORBIDDEN");
+  });
+
+  test("Lernender darf nicht schreiben", async () => {
+    const token = await mintToken({ roles: ["editor"] });
+    const response = await smtpHandler(smtpEvent(token, { method: "PUT", body: VALID }));
+    assert.equal(response.statusCode, 403);
+    assert.equal(callsTo("PUT", `/admin/realms/${realm}`).length, 0);
+  });
+
+  test("Admin liest die Einstellungen – ohne Passwort", async () => {
+    mock.smtpServer = {
+      host: "smtp.alt.example", port: "465", from: "alt@example.net",
+      ssl: "true", starttls: "false", auth: "true", user: "konto", password: "streng-geheim",
+    };
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await smtpHandler(smtpEvent(token));
+    assert.equal(response.statusCode, 200);
+    const payload = parse(response);
+    assert.equal(payload.host, "smtp.alt.example");
+    assert.equal(payload.encryption, "ssl");
+    assert.equal(payload.passwordSet, true);
+    // Entscheidend: Der Wert darf die Funktion nicht verlassen.
+    assert.equal(payload.password, undefined);
+    assert.ok(!response.body.includes("streng-geheim"));
+  });
+
+  test("mailpit gilt nicht als eingerichtet", async () => {
+    const token = await mintToken({ roles: ["admin"] });
+    const payload = parse(await smtpHandler(smtpEvent(token)));
+    assert.equal(payload.configured, false);
+  });
+
+  test("Admin speichert – Werte landen im Realm", async () => {
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await smtpHandler(smtpEvent(token, { method: "PUT", body: VALID }));
+    assert.equal(response.statusCode, 200);
+    assert.equal(mock.smtpServer.host, "smtp.example.net");
+    assert.equal(mock.smtpServer.starttls, "true");
+    assert.equal(mock.smtpServer.ssl, "false");
+    assert.equal(mock.smtpServer.auth, "true");
+    assert.equal(mock.smtpServer.password, "geheim");
+    // Ohne eigene Antwortadresse auf den Absender zurückfallen
+    assert.equal(mock.smtpServer.replyTo, "noreply@example.net");
+  });
+
+  test("Speichern ohne Passwort behält das hinterlegte", async () => {
+    mock.smtpServer = { host: "alt", port: "25", from: "a@b.de", auth: "true", user: "u", password: "bestand" };
+    const token = await mintToken({ roles: ["admin"] });
+    const { password, ...ohnePasswort } = VALID;
+    const response = await smtpHandler(smtpEvent(token, { method: "PUT", body: ohnePasswort }));
+    assert.equal(response.statusCode, 200);
+    assert.equal(mock.smtpServer.password, "bestand");
+    assert.equal(mock.smtpServer.host, "smtp.example.net");
+  });
+
+  test("ungültige Eingaben werden abgewiesen, ohne Keycloak zu schreiben", async () => {
+    const token = await mintToken({ roles: ["admin"] });
+    for (const bad of [
+      { ...VALID, host: "" },
+      { ...VALID, port: "0" },
+      { ...VALID, port: "70000" },
+      { ...VALID, from: "keine-adresse" },
+      { ...VALID, encryption: "unfug" },
+      { ...VALID, auth: true, user: "" },
+    ]) {
+      const response = await smtpHandler(smtpEvent(token, { method: "PUT", body: bad }));
+      assert.equal(response.statusCode, 400, JSON.stringify(bad));
+    }
+    assert.equal(callsTo("PUT", `/admin/realms/${realm}`).length, 0);
+  });
+
+  test("fehlendes manage-realm wird erklärt statt nur gemeldet", async () => {
+    mock.realmUpdateStatus = 403;
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await smtpHandler(smtpEvent(token, { method: "PUT", body: VALID }));
+    assert.equal(response.statusCode, 502);
+    assert.equal(parse(response).code, "KEYCLOAK_FORBIDDEN");
+    assert.match(parse(response).message, /manage-realm/);
+  });
+
+  test("Testversand geht an das eigene Konto, nicht an eine übergebene Adresse", async () => {
+    const token = await mintToken({ roles: ["admin"], email: "chefin@example.net" });
+    const response = await smtpHandler(smtpEvent(token, {
+      method: "POST",
+      path: "/api/admin/smtp/test",
+      body: { ...VALID, to: "opfer@fremde-domain.de" },
+    }));
+    assert.equal(response.statusCode, 200);
+    assert.match(parse(response).message, /chefin@example\.net/);
+    const call = callsTo("POST", "/testSMTPConnection")[0];
+    assert.ok(call, "Testversand wurde nicht ausgelöst");
+    // Die fremde Adresse darf nirgends auftauchen.
+    assert.ok(!JSON.stringify(call.body).includes("opfer@fremde-domain.de"));
+  });
+
+  test("Fehlermeldung des Mailservers wird durchgereicht", async () => {
+    mock.smtpTestStatus = 500;
+    const token = await mintToken({ roles: ["admin"], email: "chefin@example.net" });
+    const response = await smtpHandler(smtpEvent(token, {
+      method: "POST", path: "/api/admin/smtp/test", body: VALID,
+    }));
+    assert.equal(response.statusCode, 400);
+    assert.equal(parse(response).code, "SMTP_TEST_FAILED");
+    assert.match(parse(response).message, /Connection refused/);
+  });
+
+  test("unbekannte POST-Route liefert 404", async () => {
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await smtpHandler(smtpEvent(token, { method: "POST", path: "/api/admin/smtp", body: {} }));
+    assert.equal(response.statusCode, 404);
+  });
+
+  test("DELETE ist nicht erlaubt", async () => {
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await smtpHandler(smtpEvent(token, { method: "DELETE" }));
+    assert.equal(response.statusCode, 405);
+  });
 });

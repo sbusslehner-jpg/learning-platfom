@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, Bell, Check, CheckCircle2, Download, Info, Lock, Plus,
+  AlertTriangle, Bell, Check, CheckCircle2, Download, Info, Lock, Mail, Plus,
   RefreshCw, Settings, Sparkles, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { fetchAppSettings, saveAppSetting } from "../data/api";
+import {
+  fetchSmtpSettings, saveSmtpSettings, SMTP_AVAILABLE, testSmtpSettings,
+  type SmtpInput,
+} from "../data/smtpApi";
 import { ROLE_LABELS, type Role } from "../data/roles";
 import { UI_LANGUAGES, useT } from "../i18n";
 
@@ -110,6 +114,187 @@ function NotStored() {
   return <span className="text-[11px] font-normal text-[#8A93A0] whitespace-nowrap">(noch nicht gespeichert)</span>;
 }
 
+// ─── Mail-Einstellungen (SMTP) ───────────────────────────────────────────────
+// Schreibt NICHT in `app_setting`, sondern über /api/admin/smtp in den
+// Keycloak-Realm: Von dort gehen die Einladungen raus, dort muss die
+// Einstellung also liegen. Das Passwort wird nie zurückgelesen – ein leeres
+// Feld bedeutet „bestehendes behalten", nicht „löschen".
+
+const INPUT_CLASS =
+  `w-full h-10 px-3 rounded-lg border border-[#8A93A0] text-[14px] text-[#232830] ` +
+  `placeholder:text-[#8A93A0] outline-none focus:border-[#009D97] focus:ring-2 ` +
+  `focus:ring-[#009D97]/20 transition-all ${FOCUS}`;
+
+function Field({ id, label, hint, children }: {
+  id: string; label: string; hint?: string; children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-[13px] font-medium text-[#3A424E] mb-1.5">{label}</label>
+      {children}
+      {hint && <p className="mt-1 text-[11px] text-[#8A93A0]">{hint}</p>}
+    </div>
+  );
+}
+
+function SmtpPanel() {
+  const [form, setForm] = useState<SmtpInput>({
+    host: "", port: "587", from: "", fromDisplayName: "GroupIT Lernplattform",
+    replyTo: "", encryption: "starttls", auth: true, user: "", password: "",
+  });
+  const [passwordSet, setPasswordSet] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<null | "save" | "test">(null);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchSmtpSettings().then(s => {
+      if (!alive) return;
+      if (s) {
+        setForm({
+          host: s.host, port: s.port, from: s.from, fromDisplayName: s.fromDisplayName,
+          replyTo: s.replyTo, encryption: s.encryption, auth: s.auth, user: s.user, password: "",
+        });
+        setPasswordSet(s.passwordSet);
+        setConfigured(s.configured);
+      }
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const set = <K extends keyof SmtpInput>(key: K, value: SmtpInput[K]) =>
+    setForm(f => ({ ...f, [key]: value }));
+
+  const run = async (what: "save" | "test") => {
+    setBusy(what);
+    setErrors([]);
+    const result = what === "save" ? await saveSmtpSettings(form) : await testSmtpSettings(form);
+    setBusy(null);
+    if (result.ok) {
+      toast.success(result.message);
+      if (what === "save" && form.password) { setPasswordSet(true); set("password", ""); }
+      if (what === "save") setConfigured(true);
+    } else {
+      setErrors(result.fieldErrors ?? [result.message]);
+      toast.error(result.message);
+    }
+  };
+
+  if (!SMTP_AVAILABLE) {
+    return (
+      <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
+        <SectionHeader title="E-Mail-Versand" description="Nur im Keycloak-Modus verfügbar" />
+        <div className="px-6 py-5 text-[13px] text-[#5A6472]">
+          Diese Einstellung schreibt in den Keycloak-Realm. Ohne konfigurierte
+          Keycloak-Anbindung gibt es dort nichts zu schreiben.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
+      <SectionHeader
+        title="E-Mail-Versand (SMTP)"
+        description="Über diesen Server verschickt die Plattform Einladungen und Links zum Zurücksetzen von Passwörtern"
+      />
+
+      {!loading && !configured && (
+        <div className="mx-6 mt-5 flex gap-2.5 rounded-lg bg-[#FDF3E4] border border-[#F5E3C6] px-4 py-3">
+          <AlertTriangle size={16} className="text-[#B45309] shrink-0 mt-0.5" aria-hidden="true" />
+          <p className="text-[12px] text-[#B45309]">
+            Noch kein Mailserver hinterlegt. Eingeladene Benutzer erhalten deshalb
+            keine Nachricht und können ihr Passwort nicht setzen. Das Konto wird
+            trotzdem angelegt; die Einladung lässt sich später erneut versenden.
+          </p>
+        </div>
+      )}
+
+      {errors.length > 0 && (
+        <div className="mx-6 mt-5 rounded-lg bg-[#FDEEEC] border border-[#F5C6C2] px-4 py-3">
+          <ul className="text-[12px] text-[#B42318] space-y-0.5">
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <div className="px-6 py-5 grid gap-4 sm:grid-cols-2">
+        <Field id="smtp-host" label="Server">
+          <input id="smtp-host" className={INPUT_CLASS} value={form.host} disabled={loading}
+            placeholder="smtp-relay.brevo.com"
+            onChange={e => set("host", e.target.value)} />
+        </Field>
+        <Field id="smtp-port" label="Port" hint="587 mit STARTTLS, 465 mit SSL">
+          <input id="smtp-port" className={INPUT_CLASS} value={form.port} disabled={loading}
+            inputMode="numeric" onChange={e => set("port", e.target.value)} />
+        </Field>
+        <Field id="smtp-from" label="Absenderadresse">
+          <input id="smtp-from" type="email" className={INPUT_CLASS} value={form.from} disabled={loading}
+            placeholder="noreply@deine-domain.de"
+            onChange={e => set("from", e.target.value)} />
+        </Field>
+        <Field id="smtp-fromname" label="Anzeigename des Absenders">
+          <input id="smtp-fromname" className={INPUT_CLASS} value={form.fromDisplayName} disabled={loading}
+            onChange={e => set("fromDisplayName", e.target.value)} />
+        </Field>
+        <Field id="smtp-replyto" label="Antwortadresse" hint="Leer lassen, um die Absenderadresse zu verwenden">
+          <input id="smtp-replyto" type="email" className={INPUT_CLASS} value={form.replyTo} disabled={loading}
+            onChange={e => set("replyTo", e.target.value)} />
+        </Field>
+        <Field id="smtp-enc" label="Verschlüsselung">
+          <select id="smtp-enc" className={INPUT_CLASS} value={form.encryption} disabled={loading}
+            onChange={e => set("encryption", e.target.value as SmtpInput["encryption"])}>
+            <option value="starttls">STARTTLS (empfohlen)</option>
+            <option value="ssl">SSL/TLS</option>
+            <option value="none">Keine</option>
+          </select>
+        </Field>
+      </div>
+
+      <div className="px-6 pb-5 border-t border-[#EEF1F4] pt-5">
+        <label className="flex items-center gap-2 text-[13px] text-[#3A424E] mb-4 cursor-pointer">
+          <input type="checkbox" className="accent-[#00C8C1]" checked={form.auth} disabled={loading}
+            onChange={e => set("auth", e.target.checked)} />
+          Anmeldung am Mailserver erforderlich
+        </label>
+
+        {form.auth && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field id="smtp-user" label="Benutzername">
+              <input id="smtp-user" className={INPUT_CLASS} value={form.user} disabled={loading}
+                autoComplete="off" onChange={e => set("user", e.target.value)} />
+            </Field>
+            <Field id="smtp-pass" label="Passwort"
+              hint={passwordSet ? "Hinterlegt. Leer lassen, um es unverändert zu übernehmen." : "Noch keines hinterlegt."}>
+              <input id="smtp-pass" type="password" className={INPUT_CLASS} value={form.password ?? ""}
+                disabled={loading} autoComplete="new-password"
+                placeholder={passwordSet ? "••••••••" : ""}
+                onChange={e => set("password", e.target.value)} />
+            </Field>
+          </div>
+        )}
+      </div>
+
+      <div className="px-6 py-4 border-t border-[#EEF1F4] flex items-center gap-3 flex-wrap">
+        <button type="button" onClick={() => run("save")} disabled={loading || busy !== null}
+          className={`h-10 px-4 rounded-lg bg-[#00C8C1] text-white text-[13px] font-semibold hover:bg-[#00B3AD] disabled:opacity-50 transition-colors ${FOCUS}`}>
+          {busy === "save" ? "Wird gespeichert …" : "Speichern"}
+        </button>
+        <button type="button" onClick={() => run("test")} disabled={loading || busy !== null}
+          className={`h-10 px-4 rounded-lg border border-[#8A93A0] text-[#3A424E] text-[13px] font-semibold hover:bg-[#F6F8FA] disabled:opacity-50 transition-colors ${FOCUS}`}>
+          {busy === "test" ? "Wird gesendet …" : "Verbindung testen"}
+        </button>
+        <p className="text-[11px] text-[#8A93A0]">
+          Der Test schickt eine Nachricht an die E-Mail-Adresse Ihres eigenen Kontos.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function Row({ label, desc, notStored = false, children }: {
   label: string; desc: string; notStored?: boolean; children: React.ReactNode;
 }) {
@@ -130,7 +315,7 @@ function Row({ label, desc, notStored = false, children }: {
 
 export function AdminSettings() {
   const { t } = useT();
-  type SettingsTab = "api" | "platform" | "notifications" | "security";
+  type SettingsTab = "api" | "smtp" | "platform" | "notifications" | "security";
   const [activeTab, setActiveTab] = useState<SettingsTab>("api");
 
   // Persistierte Einstellungen
@@ -228,6 +413,7 @@ export function AdminSettings() {
 
   const NAV: { id: SettingsTab; label: string; icon: React.ElementType; badge?: string }[] = [
     { id: "api",           label: "Mistral AI",         icon: Sparkles, badge: settings.autoOnPublish ? "Auto" : undefined },
+    { id: "smtp",          label: "E-Mail (SMTP)",      icon: Mail },
     { id: "platform",      label: "Plattform",          icon: Settings },
     { id: "notifications", label: "Benachrichtigungen",  icon: Bell,     badge: `${activeNotifications} aktiv` },
     { id: "security",      label: "Sicherheit",         icon: Lock },
@@ -467,6 +653,8 @@ supabase functions deploy translate-training</pre>
           </>}
 
           {/* ── Plattform ── */}
+          {activeTab === "smtp" && <SmtpPanel />}
+
           {activeTab === "platform" && <>
             <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
               <SectionHeader title="Inhalte &amp; Sprache" description="Grundeinstellungen für die Erstellung von Trainingsinhalten" />

@@ -8,7 +8,7 @@ Die Anwendung setzt das Figma-Make-Design „Lernplattform Designbriefing umsetz
 
 - **Lernen:** Login · Dashboard „Start" · Katalog · Trainingsübersicht · Lernansicht (Kapitel, Video, Schrittanleitung) · Abschluss-Screen
 - **Redaktion:** Inhaltsbaum · Trainingseditor · Übersetzungs-Übersicht · Side-by-side-Prüfansicht
-- **Verwaltung:** Benutzer · Märkte & Sprachen · Einstellungen (Mistral-API)
+- **Verwaltung:** Benutzer · Märkte & Sprachen · Einstellungen (Mistral-API, E-Mail/SMTP)
 
 ## Entwicklung
 
@@ -32,7 +32,7 @@ npm run preview  # Build lokal testen
 ```
 docs/                       Konzept & UX/UI-Designbriefing
 auth/                       Keycloak-Stack: compose, Realm-Import, E-Mail-Theme
-netlify/functions/          Token-Austausch und Benutzer-Einladung
+netlify/functions/          Token-Austausch, Benutzer-Einladung, Mail-Einstellungen
 src/app/App.tsx             Shell: Auth-Gate, Routen, Layout
 src/app/components/ui/      shadcn/ui-Komponentenbibliothek
 src/styles/                 Design-Tokens (GroupIT: Türkis #00C8C1, Anthrazit #3A424E)
@@ -79,14 +79,15 @@ und ein Selbsttest in einem Lauf – Details in
 - **Übersetzungs-Worker deployen:** siehe [docs/uebersetzung-worker.md](docs/uebersetzung-worker.md) (Mistral-Key als Supabase-Secret).
 - **Impressum & Datenschutz:** Die Platzhalter unter `/impressum` und `/datenschutz` durch juristisch geprüfte Texte ersetzen.
 - **Berechtigungen produktiv schalten:** `supabase/migrations/0005_production_rls.sql` und `supabase/migrations/0006_fix_app_user_upsert.sql` einspielen (nimmt die Demo-Schreibrechte zurück bzw. repariert das Anlegen des Benutzerprofils) und die Kontrollabfragen ausführen – siehe [docs/keycloak-setup.md](docs/keycloak-setup.md), Abschnitt 6.
-- **Produktions-SMTP** für Keycloak samt SPF/DKIM/DMARC einrichten, sonst landen Einladungen im Spam.
+- **Produktions-SMTP** einrichten – in der Plattform unter **Verwaltung → Einstellungen → E-Mail (SMTP)**,
+  inklusive Verbindungstest. Dazu SPF/DKIM/DMARC für die Absenderdomain setzen, sonst landen Einladungen im Spam.
 - **Noch offen:** serverseitiger Lernfortschritt, Datei-Uploads, Monitoring – Details in [docs/produktionsreife.md](docs/produktionsreife.md).
 
 ## Tests
 
 ```bash
 npm run test:unit       # 30 Unit-Tests der SSO-Kernlogik
-npm run test:functions  # 34 Tests der Auth-Funktionen (Mock-Keycloak)
+npm run test:functions  # 47 Tests der Auth-Funktionen (Mock-Keycloak)
 npm run test:e2e        # 50 End-to-End-Prüfungen im Browser (Demo-Modus)
 npm run test:keycloak   # 10 Prüfungen des OIDC-Absprungs (Keycloak-Modus)
 npm test                # alle vier

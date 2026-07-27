@@ -63,6 +63,22 @@ den Link. Damit wandert nie ein Passwort per E-Mail.
 | `POST /api/auth/exchange` | Keycloak-Token → Supabase-Token | Bearer (Keycloak) |
 | `POST /api/admin/invite` | Benutzer anlegen + Einladung senden | Bearer (Keycloak, Rolle `admin`) |
 | `POST /api/admin/invite/resend` | Einladung erneut senden | Bearer (Keycloak, Rolle `admin`) |
+| `GET /api/admin/smtp` | Mail-Einstellungen lesen (**ohne** Passwort, nur `passwordSet`) | Bearer (Keycloak, Rolle `admin`) |
+| `PUT /api/admin/smtp` | Mail-Einstellungen speichern | Bearer (Keycloak, Rolle `admin`) |
+| `POST /api/admin/smtp/test` | Testnachricht an das Konto des Aufrufers | Bearer (Keycloak, Rolle `admin`) |
+
+**Zu den Mail-Einstellungen:** Sie liegen im Keycloak-Realm, nicht in der
+Plattform-Datenbank – von dort geht die Einladung raus. Der Service-Account des
+Clients `platform-backend` braucht dafür die Rolle **`manage-realm`**; ohne sie
+antwortet der Endpunkt mit `KEYCLOAK_FORBIDDEN` und benennt genau das.
+
+Zwei Festlegungen sind dort sicherheitsrelevant:
+
+- Das SMTP-Passwort verlässt den Server **nie**. Ein leeres Passwortfeld beim
+  Speichern bedeutet „bestehendes behalten", nicht „löschen".
+- Der Empfänger des Testversands kommt aus dem geprüften Token des Aufrufers,
+  **nicht** aus dem Request. Andernfalls wäre der Endpunkt ein Versandwerkzeug
+  für beliebige Adressen über euren Mailserver.
 
 Netlify Functions laufen unter derselben Domain wie die Oberfläche – kein CORS,
 kein zusätzlicher Dienst, und die Keycloak-Client-Credentials bleiben serverseitig.

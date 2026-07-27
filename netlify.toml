@@ -32,6 +32,18 @@
   to = "/.netlify/functions/admin-invite"
   status = 200
 
+# Mail-Einstellungen: lesen (GET), speichern (PUT), testen (POST /test).
+# Wieder zuerst die spezifischere Route.
+[[redirects]]
+  from = "/api/admin/smtp/test"
+  to = "/.netlify/functions/admin-smtp"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/smtp"
+  to = "/.netlify/functions/admin-smtp"
+  status = 200
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SSO Ein-Domain-Proxy (Option A / Integrationsschritt) — STANDARDMÄSSIG AUS.
 #

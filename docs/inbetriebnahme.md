@@ -166,7 +166,14 @@ curl -s -X POST "https://DEINE-KEYCLOAK-ADRESSE/realms/serviceq/protocol/openid-
 
 Ohne SMTP verschickt Keycloak keine Einladungen.
 
-Keycloak-Konsole → **Realm settings** → Reiter **Email**:
+**Der bequeme Weg führt über die Plattform selbst:** Nach der Anmeldung als
+Administrator unter **Verwaltung → Einstellungen → E-Mail (SMTP)**. Dort Server,
+Port, Absender und Zugangsdaten eintragen, mit *Verbindung testen* eine
+Testnachricht an das eigene Konto schicken, dann speichern. Die Einstellung
+landet im Keycloak-Realm, ohne dass jemand Zugang zur Keycloak-Konsole braucht.
+Das Passwort wird dabei nie zurückgelesen – ein leeres Feld heißt „unverändert".
+
+Alternativ in der Keycloak-Konsole → **Realm settings** → Reiter **Email**:
 
 | Feld | Wert |
 |---|---|

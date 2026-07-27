@@ -84,7 +84,8 @@ export function parseJsonBody(event) {
  * Ermittelt den ursprünglich angefragten Pfad. Netlify rewritet
  * `/api/...` per Redirect auf `/.netlify/functions/...`; je nach Runtime
  * steht der Originalpfad in `path`, `rawUrl` oder einem Netlify-Header.
- * Wird gebraucht, um `/api/admin/invite` von `.../invite/resend` zu trennen.
+ * Wird gebraucht, um Unterrouten zu trennen: `/api/admin/invite` von
+ * `.../invite/resend`, `/api/admin/smtp` von `.../smtp/test`.
  * @param {any} event
  * @returns {string}
  */
@@ -100,8 +101,14 @@ export function requestPath(event) {
       /* rawUrl unbrauchbar – ignorieren */
     }
   }
-  // Der spezifischste (längste) Pfad gewinnt: enthält eine der Quellen das
-  // `/resend`-Suffix, ist das die tatsächlich aufgerufene Route.
-  const withSuffix = candidates.find((p) => p.replace(/\/+$/, "").endsWith("/resend"));
-  return withSuffix ?? candidates[0] ?? "";
+  if (candidates.length === 0) return "";
+
+  // Der spezifischste Pfad gewinnt, gemessen an der Zahl der Segmente.
+  // Netlify liefert als `path` oft den Funktionspfad ohne Unterroute
+  // (`/.netlify/functions/admin-smtp`), während der tatsächlich aufgerufene
+  // Pfad (`/api/admin/smtp/test`) nur in `rawUrl` oder im Header steht.
+  // Früher stand hier eine feste Prüfung auf `/resend`; das musste bei jeder
+  // neuen Unterroute nachgezogen werden – und wurde beim ersten Mal vergessen.
+  const segments = (p) => p.replace(/\/+$/, "").split("/").filter(Boolean).length;
+  return candidates.reduce((best, p) => (segments(p) > segments(best) ? p : best), candidates[0]);
 }
