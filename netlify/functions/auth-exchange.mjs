@@ -76,7 +76,7 @@ export const handler = async (event) => {
   if (upsert.active === false) {
     // R-10: Eine abgewiesene Anmeldung eines gesperrten Kontos ist genau das,
     // was spaeter jemand nachvollziehen will.
-    void audit({
+    await audit({
       identity: { ...identity, appUserId: upsert.id },
       action: "login.denied",
       targetType: "app_user",

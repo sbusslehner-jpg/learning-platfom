@@ -273,7 +273,7 @@ async function handlePut(event, service, actor) {
     return json(502, { code: "KEYCLOAK_ERROR", message: "Einstellungen konnten nicht gespeichert werden." });
   }
 
-  void audit({
+  await audit({
     identity: actor,
     action: "smtp.updated",
     targetType: "realm",

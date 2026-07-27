@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "npm run typecheck && npm run test:unit && npm run test:functions && npm run test:e2e && npm run test:keycloak",
     "test:unit": "node --experimental-strip-types --test supabase/functions/_shared/sso.test.ts tests/legal.test.ts",
-    "test:functions": "node --test tests/auth-functions.test.mjs tests/media-policy.test.mjs",
+    "test:functions": "node --test tests/auth-functions.test.mjs tests/media-policy.test.mjs tests/serverless-hygiene.test.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "test:keycloak": "node tests/keycloak-mode.mjs",
     "db:migrate": "node scripts/db-migrate.mjs",

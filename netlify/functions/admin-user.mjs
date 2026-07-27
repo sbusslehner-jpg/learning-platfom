@@ -129,7 +129,7 @@ async function handlePending() {
 /** Offene Abgleiche erneut versuchen. */
 async function handleReconcile(identity) {
   const result = await reconcilePendingSync();
-  void audit({
+  await audit({
     identity,
     action: "user.reconcile",
     targetType: "sync_outbox",
@@ -222,7 +222,7 @@ export const handler = async (event) => {
     }
 
     if (!ok) {
-      void audit({
+      await audit({
         identity: auth.identity, action: `user.${operation}`, targetType: "keycloak_user",
         targetId: userId, outcome: "failed", detail: payload,
       });
@@ -248,7 +248,7 @@ export const handler = async (event) => {
       });
     }
 
-    void audit({
+    await audit({
       identity: auth.identity,
       action: `user.${operation}`,
       targetType: "keycloak_user",

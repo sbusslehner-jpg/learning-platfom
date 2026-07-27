@@ -335,7 +335,7 @@ async function handleFinalize(event, auth) {
     await restAsCaller(auth.token, "/rest/v1/asset", {
       method: "PATCH", query: { id: `eq.${assetId}` }, body: { status: "rejected" },
     });
-    void audit({
+    await audit({
       identity: auth.identity, action: "media.rejected", targetType: "asset",
       targetId: assetId, outcome: "denied", detail,
     });
@@ -390,7 +390,7 @@ async function handleFinalize(event, auth) {
     return json(502, { code: "STORAGE_ERROR", message: "Die Freigabe konnte nicht gespeichert werden." });
   }
 
-  void audit({
+  await audit({
     identity: auth.identity, action: "media.uploaded", targetType: "asset",
     targetId: assetId, detail: { mime: asset.mime, bytes: actualSize },
   });
@@ -477,7 +477,7 @@ async function handleDelete(event, auth) {
     return json(502, { code: "STORAGE_ERROR", message: "Der Eintrag konnte nicht entfernt werden." });
   }
 
-  void audit({
+  await audit({
     identity: auth.identity, action: "media.deleted", targetType: "asset", targetId: assetId,
   });
   return json(200, { assetId, deleted: true });

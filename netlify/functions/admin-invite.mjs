@@ -372,7 +372,7 @@ async function handleResend(event, actor) {
   }
 
   const emailSent = await sendInvitationEmail(userId, service.token);
-  void audit({
+  await audit({
     identity: actor,
     action: "user.invite_resent",
     targetType: "keycloak_user",
@@ -541,7 +541,7 @@ async function handleInvite(event, actor) {
   ];
   if (mirror.note) messages.push(mirror.note);
 
-  void audit({
+  await audit({
     identity: actor,
     action: "user.invited",
     targetType: "keycloak_user",
