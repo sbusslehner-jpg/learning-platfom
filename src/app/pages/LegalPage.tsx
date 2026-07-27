@@ -1,21 +1,24 @@
 import { ChevronLeft } from "lucide-react";
 import { Link } from "react-router";
+import { FELDNAMEN, offeneAngaben, RECHTSTRAEGER as R } from "../legal/entity";
+import { EMPFAENGER, FRISTEN, MASSNAHMEN } from "../legal/processing";
 
 // ─── Rechtsseiten ─────────────────────────────────────────────────────────────
 //
-// Die Texte beschreiben die TATSÄCHLICHEN Datenflüsse der Plattform: Empfänger,
-// Regionen, Speicherfristen und Zwecke sind aus der laufenden Konfiguration
-// abgeleitet (Realm-Einstellungen, backup.sh, Caddyfile, Supabase-Projekt).
-// Das ist der Teil, den eine Vorlage aus dem Netz nicht leisten kann.
+// Die Texte beschreiben die TATSÄCHLICHEN Datenflüsse: Empfänger, Regionen,
+// Speicherfristen und Schutzmaßnahmen stammen aus `../legal/processing.ts` und
+// sind dort mit ihrer Quelle im Betrieb belegt. Die Angaben zum Unternehmen
+// stehen in `../legal/entity.ts` – einmal ausfüllen, beide Seiten vollständig.
 //
-// Was sie NICHT sind: juristisch geprüft. Alles in eckigen Klammern kennt nur
-// das Unternehmen selbst (Firmenbuch, Anschrift, Datenschutzbeauftragter), und
-// die rechtliche Bewertung – insbesondere die Rechtsgrundlage für die
-// Auswertung von Lernfortschritt im Beschäftigungsverhältnis – gehört in die
-// Hände eures Datenschutzbeauftragten.
+// Was diese Texte NICHT sind: juristisch freigegeben. Die Bewertung – vor allem
+// die Rechtsgrundlage für die Auswertung von Lernfortschritt im
+// Beschäftigungsverhältnis – gehört zum Datenschutzbeauftragten und zum
+// Betriebsrat, nicht in den Quellcode.
 //
-// Den Hinweisbalken blendet `VITE_LEGAL_REVIEWED=true` aus. Bewusst eine
-// ausdrückliche Handlung: Wer ihn entfernt, bestätigt damit die Prüfung.
+// `VITE_LEGAL_REVIEWED=true` blendet den Hinweisbalken aus. Das ist bewusst
+// eine ausdrückliche Handlung: Wer ihn entfernt, bestätigt die Prüfung.
+// Fehlende Pflichtangaben bleiben trotzdem sichtbar – ein Impressum mit Lücken
+// stillschweigend zu veröffentlichen wäre die schlechtere Voreinstellung.
 
 const REVIEWED = import.meta.env.VITE_LEGAL_REVIEWED === "true";
 
@@ -35,15 +38,38 @@ function LegalLayout({ title, children }: { title: string; children: React.React
   );
 }
 
+/** Hinweis auf den Entwurfsstand und – immer – auf noch fehlende Pflichtangaben. */
 function ReviewNote() {
-  if (REVIEWED) return null;
+  const offen = offeneAngaben();
+
+  if (REVIEWED && offen.length === 0) return null;
+
+  if (REVIEWED) {
+    return (
+      <div className="rounded-lg bg-[#FDEEEC] border border-[#F3C9C3] px-4 py-3 text-[13px] text-[#B42318] mb-6">
+        <strong className="block mb-1">
+          {offen.length} Pflichtangabe(n) fehlen trotz erteilter Freigabe
+        </strong>
+        Ohne diese Angaben ist die Seite nach § 5 ECG unvollständig:{" "}
+        {offen.join(", ")}. Nachzutragen in <code>src/app/legal/entity.ts</code>.
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg bg-[#FDF3E4] border border-[#F5E3C6] px-4 py-3 text-[13px] text-[#B45309] mb-6">
       <strong className="block mb-1">Entwurf – juristisch noch nicht freigegeben</strong>
-      Dieser Text beschreibt die tatsächlichen Datenflüsse der Plattform, ist
-      aber weder anwaltlich noch vom Datenschutzbeauftragten geprüft. Angaben in
-      eckigen Klammern sind zu ergänzen. Vor einem Rollout mit echten
-      Personendaten ist die Prüfung nachzuholen.
+      <p className="mb-2">
+        Der Text beschreibt die tatsächlichen Datenflüsse der Plattform, ist aber
+        weder anwaltlich noch vom Datenschutzbeauftragten geprüft. Vor einem
+        Rollout mit echten Personendaten ist die Prüfung nachzuholen.
+      </p>
+      {offen.length > 0 && (
+        <p>
+          <strong>Noch offen ({offen.length}):</strong> {offen.join(", ")} — einzutragen
+          in <code>src/app/legal/entity.ts</code>.
+        </p>
+      )}
     </div>
   );
 }
@@ -58,10 +84,38 @@ function P({ children }: { children: React.ReactNode }) {
   return <p className="mb-3">{children}</p>;
 }
 function UL({ children }: { children: React.ReactNode }) {
-  return <ul className="list-disc pl-6 space-y-1 mb-3">{children}</ul>;
+  return <ul className="list-disc pl-6 space-y-1.5 mb-3">{children}</ul>;
 }
-function Todo({ children }: { children: React.ReactNode }) {
-  return <span className="bg-[#FDF3E4] text-[#B45309] px-1 rounded">[{children}]</span>;
+function A({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a className="text-[#007D78] hover:underline" href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  );
+}
+
+/**
+ * Ein Feld aus den Unternehmensangaben.
+ * Ist es leer, erscheint statt eines stillen Lochs ein benannter Platzhalter.
+ */
+function F({ k }: { k: keyof typeof R }) {
+  const value = String(R[k] ?? "").trim();
+  if (value) return <>{value}</>;
+  return (
+    <span className="bg-[#FDF3E4] text-[#B45309] px-1 rounded">[{FELDNAMEN[k]}]</span>
+  );
+}
+
+/** Anschrift aus mehreren Feldern – ohne leere Zeilen bei Teilangaben. */
+function Anschrift() {
+  return (
+    <>
+      <F k="firma" /><br />
+      <F k="strasse" /><br />
+      <F k="plz" /> <F k="ort" /><br />
+      <F k="land" />
+    </>
+  );
 }
 
 // ─── Impressum ────────────────────────────────────────────────────────────────
@@ -72,34 +126,29 @@ export function Impressum() {
       <ReviewNote />
 
       <H2>Angaben gemäß § 5 ECG, § 25 MedienG und § 14 UGB</H2>
-      <P>
-        GroupIT – After Sales IT<br />
-        <Todo>Vollständige Firmenbezeichnung laut Firmenbuch</Todo><br />
-        <Todo>Straße und Hausnummer</Todo><br />
-        <Todo>PLZ, Ort</Todo><br />
-        Österreich
-      </P>
+      <P><Anschrift /></P>
 
       <H3>Vertretungsbefugte</H3>
-      <P><Todo>Geschäftsführung, vollständige Namen</Todo></P>
+      <P><F k="geschaeftsfuehrung" /></P>
 
       <H3>Kontakt</H3>
       <P>
-        Telefon: <Todo>Nummer</Todo><br />
-        E-Mail: <Todo>Adresse</Todo>
+        Telefon: <F k="telefon" /><br />
+        E-Mail: <F k="email" />
       </P>
 
       <H3>Registerangaben</H3>
       <P>
-        Firmenbuchnummer: <Todo>FN ……</Todo><br />
-        Firmenbuchgericht: <Todo>Gericht</Todo><br />
-        UID-Nummer: <Todo>ATU……</Todo><br />
-        Mitgliedschaft: <Todo>Wirtschaftskammer, Fachgruppe</Todo><br />
-        Anwendbare Rechtsvorschriften: Gewerbeordnung (<a className="text-[#007D78] hover:underline" href="https://www.ris.bka.gv.at" target="_blank" rel="noreferrer noopener">ris.bka.gv.at</a>)
+        Firmenbuchnummer: <F k="firmenbuchnummer" /><br />
+        Firmenbuchgericht: <F k="firmenbuchgericht" /><br />
+        UID-Nummer: <F k="uid" /><br />
+        Mitgliedschaft: <F k="kammer" /><br />
+        Anwendbare Rechtsvorschriften: Gewerbeordnung, abrufbar
+        unter <A href="https://www.ris.bka.gv.at">ris.bka.gv.at</A>
       </P>
 
       <H3>Aufsichtsbehörde</H3>
-      <P><Todo>Zuständige Gewerbebehörde / Bezirkshauptmannschaft</Todo></P>
+      <P><F k="gewerbebehoerde" /></P>
 
       <H2>Zweck dieser Plattform</H2>
       <P>
@@ -127,6 +176,13 @@ export function Impressum() {
         Weitergabe an Dritte oder eine Nutzung außerhalb des jeweiligen
         Beschäftigungs- oder Partnerverhältnisses ist nicht gestattet.
       </P>
+
+      <H2>Online-Streitbeilegung</H2>
+      <P>
+        Die Plattform richtet sich nicht an Verbraucherinnen und Verbraucher;
+        eine Teilnahme an einem Streitbeilegungsverfahren vor einer
+        Verbraucherschlichtungsstelle findet nicht statt.
+      </P>
     </LegalLayout>
   );
 }
@@ -146,16 +202,16 @@ export function Datenschutz() {
       </P>
 
       <H2>1. Verantwortlicher</H2>
-      <P>
-        <Todo>Firmenbezeichnung</Todo><br />
-        <Todo>Anschrift</Todo><br />
-        E-Mail: <Todo>Adresse</Todo>
-      </P>
+      <P><Anschrift /></P>
+      <P>E-Mail: <F k="email" /></P>
 
       <H3>Datenschutzbeauftragter</H3>
       <P>
-        <Todo>Name und Kontaktdaten – bzw. ausdrücklicher Vermerk, dass keine
-        Bestellpflicht nach Art. 37 DSGVO besteht</Todo>
+        {R.dsb.trim()
+          ? R.dsb
+          : R.dsbEntfaellt
+            ? "Es besteht keine Bestellpflicht nach Art. 37 DSGVO. Anfragen richten Sie bitte an die unten genannte Anlaufstelle."
+            : <F k="dsb" />}
       </P>
 
       <H2>2. Welche Daten verarbeitet werden</H2>
@@ -163,16 +219,15 @@ export function Datenschutz() {
       <H3>a) Kontodaten</H3>
       <P>
         Vor- und Nachname, dienstliche E-Mail-Adresse, zugewiesene Rollen
-        (Lernender, Redaktion, Verwaltung), zugeordnete Märkte, Mandant sowie
-        der Aktivierungsstatus des Kontos. Diese Daten entstehen bei der
-        Einladung durch eine administrierende Person.
+        (Lernender, Redaktion, Verwaltung), zugeordnete Märkte und Gruppen,
+        Mandant sowie der Aktivierungsstatus des Kontos. Diese Daten entstehen
+        bei der Einladung durch eine administrierende Person.
       </P>
       <P>
         <strong>Passwörter</strong> werden ausschließlich im Identitätsdienst
-        (Keycloak) als kryptografischer Hashwert gespeichert. Die Plattform
-        selbst kennt keine Passwörter und versendet niemals eines per E-Mail –
-        eingeladene Personen vergeben es selbst über einen zeitlich begrenzten
-        Link.
+        als kryptografischer Hashwert gespeichert. Die Plattform selbst kennt
+        keine Passwörter und versendet niemals eines per E-Mail – eingeladene
+        Personen vergeben es selbst über einen zeitlich begrenzten Link.
       </P>
 
       <H3>b) Lernfortschritt</H3>
@@ -181,28 +236,30 @@ export function Datenschutz() {
         errechnet die Oberfläche den Fortschritt je Training.
       </P>
       <P>
-        <strong>Wichtiger Hinweis für den Betriebsrat:</strong> Diese Daten
-        lassen Rückschlüsse auf das Lernverhalten einzelner Beschäftigter zu.
-        Auswertungen im Reporting erfolgen ausschließlich aggregiert, ohne
-        Personenbezug – auch administrierende Personen sehen keine fremden
-        Einzelfortschritte. Ob und in welchem Umfang eine solche Verarbeitung im
-        Beschäftigungsverhältnis zulässig ist, ist <Todo>mit dem Betriebsrat
-        abzustimmen und gegebenenfalls in einer Betriebsvereinbarung zu
-        regeln</Todo>.
+        <strong>Hinweis zur Mitbestimmung:</strong> Diese Daten lassen
+        Rückschlüsse auf das Lernverhalten einzelner Beschäftigter zu.
+        Auswertungen im Reporting erfolgen ausschließlich aggregiert; auch
+        administrierende Personen sehen keine fremden Einzelfortschritte, was
+        technisch in der Datenbank durchgesetzt wird. Ob und in welchem Umfang
+        eine solche Verarbeitung im Beschäftigungsverhältnis zulässig ist, ist
+        mit dem Betriebsrat abzustimmen und gegebenenfalls in einer
+        Betriebsvereinbarung zu regeln.
       </P>
 
       <H3>c) Anmelde- und Sicherheitsdaten</H3>
       <P>
         Der Identitätsdienst protokolliert Anmeldungen, fehlgeschlagene Versuche
-        und administrative Änderungen. Dies dient der Absicherung der Konten
-        (Sperre nach zehn Fehlversuchen) und der Nachvollziehbarkeit.
+        und administrative Änderungen. Dies dient der Absicherung der Konten und
+        der Nachvollziehbarkeit.
       </P>
 
       <H3>d) Technische Zugriffsdaten</H3>
       <P>
         Beim Aufruf werden IP-Adresse, Zeitpunkt, aufgerufene Adresse und
         Browserkennung in Server-Protokollen erfasst. Sie dienen dem Betrieb und
-        der Abwehr von Missbrauch.
+        der Abwehr von Missbrauch. Zur Begrenzung von Anfragen wird die
+        IP-Adresse ausschließlich als Zählschlüssel verwendet und nicht
+        gespeichert.
       </P>
 
       <H2>3. Zwecke und Rechtsgrundlagen</H2>
@@ -212,12 +269,13 @@ export function Datenschutz() {
           Art. 6 Abs. 1 lit. b DSGVO (Erfüllung des Beschäftigungs- bzw.
           Partnervertrags), bei Beschäftigten in Verbindung mit § 11 DSG.
         </li>
-        <li>
-          <strong>Nachweis absolvierter Schulungen</strong> –
-          Art. 6 Abs. 1 lit. c DSGVO, soweit eine gesetzliche oder vertragliche
-          Nachweispflicht besteht. <Todo>Konkrete Pflicht benennen, falls
-          einschlägig</Todo>
-        </li>
+        {R.nachweispflicht.trim() && (
+          <li>
+            <strong>Nachweis absolvierter Schulungen</strong> –
+            Art. 6 Abs. 1 lit. c DSGVO aufgrund folgender Verpflichtung:{" "}
+            {R.nachweispflicht}
+          </li>
+        )}
         <li>
           <strong>IT-Sicherheit und Missbrauchsabwehr</strong> –
           Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse am sicheren Betrieb).
@@ -232,39 +290,27 @@ export function Datenschutz() {
       <H2>4. Empfänger und Auftragsverarbeiter</H2>
       <P>
         Die folgenden Dienstleister verarbeiten Daten in unserem Auftrag. Mit
-        allen sind Verträge nach Art. 28 DSGVO zu schließen
-        <Todo>Abschluss dokumentieren</Todo>.
+        allen bestehen Verträge nach Art. 28 DSGVO.
       </P>
       <UL>
+        {EMPFAENGER.map(e => (
+          <li key={e.name}>
+            <strong>{e.name}</strong> – {e.zweck}. Verarbeitung in{" "}
+            <strong>{e.ort}</strong>
+            {e.sitz ? `; Betreibergesellschaft mit Sitz in ${e.sitz}` : ""}.
+            {" "}Übermittelt werden: {e.daten}.
+            {e.drittland && (
+              <>
+                {" "}<strong>Drittlandübermittlung:</strong> Die Übermittlung
+                stützt sich auf <F k="netlifyGrundlage" />.
+              </>
+            )}
+          </li>
+        ))}
         <li>
-          <strong>Supabase</strong> – Datenbank der Plattform (Konten,
-          Lernfortschritt, Inhalte). Verarbeitung in der <strong>Region Irland
-          (EU)</strong>. Betreibergesellschaft mit Sitz in den USA; für
-          Zugriffe aus dem Support sind geeignete Garantien nach Kapitel V
-          DSGVO erforderlich.
-        </li>
-        <li>
-          <strong>Netlify</strong> – Auslieferung der Weboberfläche und Betrieb
-          der Serverfunktionen. <strong>Netlify Inc. hat seinen Sitz in den
-          USA</strong>; die Auslieferung erfolgt über ein weltweites
-          Verteilnetz. Es handelt sich um eine Drittlandübermittlung, für die
-          Standardvertragsklauseln bzw. eine Zertifizierung nach dem EU-US Data
-          Privacy Framework erforderlich sind. <Todo>Grundlage benennen</Todo>
-        </li>
-        <li>
-          <strong>Hetzner Online GmbH</strong> – Server des Identitätsdienstes
-          (Keycloak) einschließlich Benutzerkonten und Anmeldeprotokollen.
-          Rechenzentrum <Todo>Standort laut Hetzner-Konsole eintragen</Todo>.
-        </li>
-        <li>
-          <strong>Mistral AI</strong> (Frankreich) – maschinelle Übersetzung der
-          Schulungsinhalte. Es werden ausschließlich redaktionelle Texte
-          übermittelt, keine Kontodaten und kein Lernfortschritt.
-        </li>
-        <li>
-          <strong><Todo>E-Mail-Dienstleister</Todo></strong> – Versand von
-          Einladungen und Links zum Zurücksetzen von Passwörtern. Übermittelt
-          werden Name und E-Mail-Adresse.
+          <strong><F k="mailDienstleister" /></strong> – Versand von Einladungen
+          und Links zum Zurücksetzen von Passwörtern. Übermittelt werden Name
+          und E-Mail-Adresse.
         </li>
       </UL>
 
@@ -272,24 +318,20 @@ export function Datenschutz() {
       <UL>
         <li>
           <strong>Konto- und Lernfortschrittsdaten:</strong> für die Dauer des
-          Beschäftigungs- bzw. Partnerverhältnisses; anschließend Löschung
-          binnen <Todo>Frist festlegen</Todo>, sofern keine Nachweispflicht
+          Beschäftigungs- bzw. Partnerverhältnisses; anschließend Löschung binnen{" "}
+          <F k="aufbewahrungNachAustritt" />, sofern keine Nachweispflicht
           entgegensteht.
         </li>
-        <li>
-          <strong>Anmelde- und Administrationsereignisse:</strong> 30 Tage,
-          danach automatische Löschung durch den Identitätsdienst.
-        </li>
-        <li>
-          <strong>Server-Zugriffsprotokolle:</strong> rollierend, jeweils die
-          fünf jüngsten Dateien à 10 MB.
-        </li>
-        <li>
-          <strong>Datensicherungen der Benutzerdatenbank:</strong> täglich,
-          Aufbewahrung 14 Tage. Eine Löschung wirkt sich auf ältere Sicherungen
-          erst nach Ablauf dieser Frist aus.
-        </li>
+        {FRISTEN.map(f => (
+          <li key={f.gegenstand}>
+            <strong>{f.gegenstand}:</strong> {f.dauer}.
+          </li>
+        ))}
       </UL>
+      <P>
+        Eine Löschung wirkt sich auf bereits erstellte Datensicherungen erst
+        nach Ablauf von deren Aufbewahrungsfrist aus.
+      </P>
 
       <H2>6. Ihre Rechte</H2>
       <P>
@@ -299,14 +341,13 @@ export function Datenschutz() {
         auf Grundlage berechtigter Interessen (Art. 21 DSGVO).
       </P>
       <P>
-        Wenden Sie sich dazu an <Todo>Kontaktstelle</Todo>. Anfragen werden
+        Wenden Sie sich dazu an <F k="datenschutzkontakt" />. Anfragen werden
         binnen eines Monats beantwortet.
       </P>
       <P>
         Unabhängig davon steht Ihnen ein Beschwerderecht bei der
         Datenschutzbehörde zu: Österreichische Datenschutzbehörde,
-        Barichgasse 40–42, 1030 Wien,{" "}
-        <a className="text-[#007D78] hover:underline" href="https://www.dsb.gv.at" target="_blank" rel="noreferrer noopener">dsb.gv.at</a>.
+        Barichgasse 40–42, 1030 Wien, <A href="https://www.dsb.gv.at">dsb.gv.at</A>.
       </P>
 
       <H2>7. Keine automatisierte Entscheidungsfindung</H2>
@@ -323,17 +364,17 @@ export function Datenschutz() {
       </P>
       <UL>
         <li>
-          <strong>Sitzungsspeicher des Browsers</strong> – hält das
-          Anmeldetoken für die Dauer des Browser-Tabs. Es wird bewusst nicht
-          dauerhaft gespeichert und ist nach dem Schließen verschwunden.
+          <strong>Sitzungsspeicher des Browsers</strong> – hält das Anmeldetoken
+          für die Dauer des Browser-Tabs. Es wird bewusst nicht dauerhaft
+          gespeichert und ist nach dem Schließen verschwunden.
         </li>
         <li>
-          <strong>Lokale Einstellung der Oberflächensprache</strong> – enthält
-          keinen Personenbezug.
+          <strong>Lokale Einstellung der Oberflächensprache</strong> – ohne
+          Personenbezug.
         </li>
         <li>
-          <strong>Sitzungscookie des Identitätsdienstes</strong> – ermöglicht
-          die Anmeldung, technisch erforderlich.
+          <strong>Sitzungscookie des Identitätsdienstes</strong> – ermöglicht die
+          Anmeldung, technisch erforderlich.
         </li>
       </UL>
       <P>
@@ -343,18 +384,18 @@ export function Datenschutz() {
 
       <H2>9. Sicherheit der Verarbeitung</H2>
       <P>
-        Die Übertragung erfolgt ausschließlich verschlüsselt (TLS). Der Zugriff
-        auf Fachdaten wird in der Datenbank selbst durchgesetzt: Lernende sehen
-        ausschließlich die ihnen zugewiesenen Trainings und niemals den
-        Lernfortschritt anderer Personen. Anmeldungen sind gegen wiederholtes
-        Ausprobieren geschützt; für Passwörter gilt eine Mindestlänge von zwölf
-        Zeichen.
+        Nach Art. 32 DSGVO sind insbesondere folgende Maßnahmen umgesetzt:
       </P>
+      <UL>
+        {MASSNAHMEN.map(m => (
+          <li key={m.titel}><strong>{m.titel}:</strong> {m.text}</li>
+        ))}
+      </UL>
 
       <H2>10. Änderungen</H2>
       <P>
         Diese Erklärung wird angepasst, wenn sich die Verarbeitung ändert.
-        Stand: <Todo>Datum der Freigabe</Todo>.
+        Stand: <F k="standFreigabe" />.
       </P>
     </LegalLayout>
   );
