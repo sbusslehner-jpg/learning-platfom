@@ -185,9 +185,18 @@ export type TreeProduct = { product: string; modules: TreeModule[] };
 
 export async function fetchContentTree(): Promise<TreeProduct[] | null> {
   if (!supabase) return null;
+  // `training` hat KEINE Spalte `sort` – nur `product`, `module`, `chapter` und
+  // `content_element` haben eine. Wurde sie hier mit angefordert, antwortete
+  // PostgREST mit `42703 – column training_2.sort does not exist`, die ganze
+  // Abfrage schlug fehl und der Inhaltsbaum fiel auf Demo-Daten zurück. Wer
+  // dort dann „Neues Training" wählte, hätte es an ein Demo-Modul gehängt,
+  // dessen Kennung es in der Datenbank nicht gibt.
+  // Sortiert wird deshalb nach Anlagezeitpunkt – im Redaktionsbaum ohnehin
+  // aussagekräftiger als alphabetisch. Eine manuelle Reihenfolge braucht eine
+  // eigene Spalte; die kommt mit der Drag-&-Drop-Sortierung (P2).
   const { data, error } = await supabase
     .from("product")
-    .select("title, sort, module(id, title, sort, training(id, title, status, sort, chapter(id)))")
+    .select("title, sort, module(id, title, sort, training(id, title, status, created_at, chapter(id)))")
     .order("sort");
   if (error || !data?.length) return null;
   return (data as any[]).map(p => ({
@@ -198,7 +207,7 @@ export async function fetchContentTree(): Promise<TreeProduct[] | null> {
         id: m.id,
         name: m.title,
         trainings: (m.training ?? [])
-          .sort((a: any, b: any) => a.sort - b.sort)
+          .sort((a: any, b: any) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
           .map((t: any) => ({
             id: t.id,
             title: t.title,
