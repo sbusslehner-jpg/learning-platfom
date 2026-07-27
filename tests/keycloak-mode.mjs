@@ -14,7 +14,7 @@
 
 import { chromium } from "playwright";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import http from "node:http";
 
 // Siehe tests/e2e.mjs: fest verdrahtete Browserpfade laufen nur in genau
@@ -66,6 +66,29 @@ async function run() {
       VITE_KEYCLOAK_REALM: "serviceq",
       VITE_KEYCLOAK_CLIENT_ID: "learning-platform",
     },
+  });
+
+  // ── Sicherheits-Header (R-14) ──────────────────────────────────────────────
+  // Sie werden beim Build erzeugt, nicht statisch gepflegt. Geht der Schritt
+  // verloren, liefe die Seite ohne CSP – und niemand merkte es, weil nichts
+  // sichtbar kaputtgeht.
+  await check("_headers wird beim Build erzeugt", () => {
+    assert(existsSync("dist-kc/_headers"), "dist-kc/_headers fehlt");
+  });
+  await check("CSP erlaubt genau die konfigurierte Keycloak-Adresse", () => {
+    const h = readFileSync("dist-kc/_headers", "utf8");
+    const csp = h.split("\n").find(l => l.includes("Content-Security-Policy")) ?? "";
+    assert(csp.includes(`connect-src`), "connect-src fehlt");
+    assert(csp.includes(KC), `Keycloak-Adresse fehlt in der CSP: ${csp.slice(0, 160)}`);
+    assert(!/connect-src[^;]*\shttps:(\s|;|$)/.test(csp), "connect-src erlaubt pauschal https:");
+    assert(!csp.includes("style-src 'self' 'unsafe-inline'"), "style-src erlaubt weiterhin inline-Bloecke");
+  });
+  await check("Frame-Einbettung und Formularziele sind eng gefasst", () => {
+    const h = readFileSync("dist-kc/_headers", "utf8");
+    assert(h.includes("frame-ancestors 'none'"), "frame-ancestors fehlt");
+    assert(h.includes("form-action 'self'"), "form-action zu weit");
+    assert(h.includes("X-Content-Type-Options: nosniff"), "nosniff fehlt");
+    assert(h.includes("Strict-Transport-Security"), "HSTS fehlt");
   });
 
   await new Promise(r => kcServer.listen(KC_PORT, r));

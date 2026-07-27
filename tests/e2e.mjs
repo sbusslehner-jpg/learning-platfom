@@ -69,9 +69,13 @@ async function startServer() {
   }
   if (!process.env.SKIP_BUILD) {
     console.log("Anwendung bauen …");
+    // `ALLOW_DEMO_BUILD` ist die ausdrückliche Freigabe für genau diesen Fall:
+    // Die Suite prüft den Demo-Modus, also muss sie ihn bauen dürfen. Ohne die
+    // Freigabe lehnt vite.config.ts einen Produktions-Build mit Demo-Modus ab
+    // (R-15) – das soll ein versehentliches Deploy verhindern, nicht diesen Test.
     execSync("npx vite build", {
       stdio: "pipe",
-      env: { ...process.env, VITE_DEMO_MODE: "true" },
+      env: { ...process.env, VITE_DEMO_MODE: "true", ALLOW_DEMO_BUILD: "1" },
     });
   }
   console.log("Server starten …");
