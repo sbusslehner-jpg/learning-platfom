@@ -588,9 +588,14 @@ function DemoEditor({ onNavigate }: { onNavigate: NavHandler }) {
   return (
     <div className="flex-1 flex overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Demo banner */}
+        {/* Diese Ansicht erscheint, wenn KEIN Training geladen ist – also ohne
+            ID in der URL oder bei einem unbekannten Datensatz. Der frühere Text
+            behauptete, die Datenbank sei nicht verbunden; das führte in die
+            Irre, denn der häufigste Fall ist schlicht „nichts ausgewählt". */}
         <div className="bg-[#FDF3E4] text-[#B45309] text-[12px] px-6 py-1.5 border-b border-[#F5E3C6] shrink-0">
-          Demo-Ansicht – mit verbundener Datenbank wird hier echt bearbeitet.
+          Beispielansicht – es ist kein Training ausgewählt. Zum Bearbeiten
+          eines echten Trainings über <strong>Redaktion → Inhaltsbaum</strong>
+          {" "}gehen und dort ein Training öffnen oder neu anlegen.
         </div>
 
         {/* Editor header */}
