@@ -165,7 +165,9 @@ function LiveReview({
       toast.error(res.message);
       return;
     }
-    toast.info(res.message);
+    // `complete: false` heißt: Budget erreicht, ein Teil steht noch aus.
+    if (res.complete) toast.success(res.message);
+    else toast.warning(res.message, { duration: 9000 });
     // Nach erfolgreichem Lauf neu laden.
     const fresh = await fetchReviewFields(trainingId, lang);
     if (fresh) setFields(fresh.fields.map(fromReviewField));

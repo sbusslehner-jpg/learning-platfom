@@ -12,6 +12,7 @@ import {
 } from "../data/smtpApi";
 import { ROLE_LABELS, type Role } from "../data/roles";
 import { UI_LANGUAGES, useT } from "../i18n";
+import { NotificationQueuePanel } from "./NotificationQueuePanel";
 
 // ─── Admin: Settings ──────────────────────────────────────────────────────────
 // Alle Schalter mit hinterlegtem Schlüssel schreiben sofort in `app_setting`
@@ -660,19 +661,8 @@ supabase functions deploy translate-training</pre>
             </div>
           </>}
 
-          {/* ── Benachrichtigungen ── */}
-          {activeTab === "notifications" && <>
-            <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
-              <SectionHeader title="E-Mail-Benachrichtigungen" description="Automatisierte Plattformmeldungen" />
-              <div className="flex items-start gap-2.5 px-6 py-4 bg-[#FDF3E4]">
-                <AlertTriangle size={16} className="text-[#B45309] shrink-0 mt-0.5" />
-                <p className="text-[13px] text-[#B45309] leading-snug">
-                  Der Versand-Worker für Veröffentlichungs-, Übersetzungs- und Digest-Meldungen ist noch nicht implementiert.
-                  Die SMTP-Konfiguration wird derzeit ausschließlich für Keycloak-Einladungs- und Kontomails verwendet.
-                </p>
-              </div>
-            </div>
-          </>}
+          {/* ── Benachrichtigungen (R-09) ── */}
+          {activeTab === "notifications" && <NotificationQueuePanel />}
 
           {/* ── Sicherheit ── */}
           {activeTab === "security" && <>

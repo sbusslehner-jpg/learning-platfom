@@ -98,8 +98,9 @@ try {
   console.log("\nA. Struktur");
 
   const rlsTables = ["user_group", "group_member", "training_group", "training_user",
-                     "rate_limit", "audit_event", "sync_outbox", "training", "progress",
-                     "app_user", "chapter", "content_element", "asset", "translation"];
+                     "rate_limit", "audit_event", "sync_outbox", "notification",
+                     "training", "progress", "app_user", "chapter", "content_element",
+                     "asset", "translation"];
   const rls = await c.query(
     `select relname, relrowsecurity from pg_class
       where relname = any($1) and relnamespace = 'public'::regnamespace`, [rlsTables]);
@@ -322,6 +323,67 @@ try {
   const outboxAsUser = await count("sync_outbox");
   check("Lernende sehen offene Abgleiche nicht",
     outboxAsUser === 0 || outboxAsUser === null, `sah ${outboxAsUser}`);
+
+  // ─── L. Sprachstamm (R-08) ────────────────────────────────────────────────
+  console.log("\nL. Sprachstamm");
+  await asOwner();
+  await c.query(`insert into language (code, name) values ('zz','Abnahme-Sprache')
+                 on conflict (code) do nothing`);
+
+  const nutzung = await c.query(`select * from language_usage('zz')`);
+  check("language_usage liefert Zahlen", nutzung.rowCount === 1);
+
+  await as(users.admin, ["admin"], []);
+  await allowed("Verwaltung darf eine Sprache anlegen",
+    `insert into language (code, name) values ('zy','Abnahme-Sprache-2')`);
+  await allowed("Verwaltung darf eine ungenutzte Sprache deaktivieren",
+    `select set_language_active('zz', false)`);
+  check("die Sprache ist danach inaktiv",
+    (await c.query(`select active from language where code='zz'`)).rows[0].active === false);
+
+  // Deutsch ist Standardsprache mehrerer Märkte – das MUSS scheitern, sonst
+  // stünden diese Märkte ohne Standardsprache da.
+  await denied("Standardsprache eines Marktes ist nicht abschaltbar",
+    `select set_language_active('de', false)`);
+
+  await as(users.lerner, ["user"], ["ZZ"]);
+  await denied("Lernende dürfen keine Sprache anlegen",
+    `insert into language (code, name) values ('zx','Verboten')`);
+  // Muss FEHLSCHLAGEN, nicht still nichts tun (0017): Die Policy filtert, sie
+  // wirft nicht – ohne Nachprüfung hätte der Aufruf Erfolg gemeldet, obwohl
+  // nichts geschah.
+  await denied("Lernende dürfen keine Sprache abschalten",
+    `select set_language_active('zz', true)`);
+  await denied("Lernende dürfen keine Zuweisung setzen, auch nicht leer",
+    `select set_training_assignment($1, '{}', '{}')`, [tr.markt]);
+
+  // ─── M. Benachrichtigungen (R-09) ─────────────────────────────────────────
+  console.log("\nM. Benachrichtigungen");
+  await asOwner();
+  const dedupe = "abnahme:" + process.pid;
+  await c.query(`select notify_enqueue('probe','abnahme@invalid','Betreff','Text',null,$1)`, [dedupe]);
+  await c.query(`select notify_enqueue('probe','abnahme@invalid','Betreff','Text',null,$1)`, [dedupe]);
+  const doppelt = await c.query(
+    `select count(*)::int n from notification where dedupe_key = $1`, [dedupe]);
+  check("derselbe Anlass erzeugt nur eine Nachricht", doppelt.rows[0].n === 1,
+    `${doppelt.rows[0].n} Zeilen`);
+
+  const ohneAdresse = await c.query(
+    `select notify_enqueue('probe','','Betreff','Text') as id`);
+  check("ohne Adresse entsteht keine Nachricht", ohneAdresse.rows[0].id === null);
+
+  await as(users.admin, ["admin"], []);
+  check("Verwaltung sieht die Warteschlange", (await count("notification")) >= 1);
+  await denied("Verwaltung kann keine Nachricht erfinden",
+    `insert into notification (kind,recipient,subject,body) values ('x','a@b','s','b')`);
+  await denied("Verwaltung kann eine Nachricht nicht als versendet markieren",
+    `update notification set status = 'sent'`);
+  await denied("Verwaltung kann die Warteschlange nicht leeren", `delete from notification`);
+
+  await as(users.lerner, ["user"], ["ZZ"]);
+  const queueAsUser = await count("notification");
+  check("Lernende sehen die Warteschlange nicht",
+    queueAsUser === 0 || queueAsUser === null, `sah ${queueAsUser}`);
 
 } catch (error) {
   fail++;

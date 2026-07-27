@@ -579,13 +579,37 @@ export async function completeChapter(chapterId: string): Promise<boolean> {
 }
 
 /** Stößt den Mistral-Worker an (Edge Function). Erfordert deployten Worker. */
-export async function triggerTranslation(trainingId: string, languages?: string[]): Promise<{ ok: boolean; message: string }> {
-  if (!supabase) return { ok: false, message: "Supabase nicht konfiguriert" };
+/**
+ * Startet einen Übersetzungslauf.
+ *
+ * `complete: false` heißt: Der Lauf hat sein Zeit- oder Mengenbudget erreicht
+ * und von sich aus aufgehört (R-12). Das ist kein Fehler – bereits übersetzte
+ * Felder bleiben, und ein erneuter Start setzt fort, weil die Delta-Erkennung
+ * nur Fertiges überspringt. Es muss aber gesagt werden: Ein halber Lauf, der
+ * als Erfolg gemeldet wird, hinterlässt lückenhafte Trainings, die niemand
+ * sucht.
+ */
+export async function triggerTranslation(
+  trainingId: string, languages?: string[],
+): Promise<{ ok: boolean; complete: boolean; message: string }> {
+  if (!supabase) return { ok: false, complete: false, message: "Supabase nicht konfiguriert" };
   const { data, error } = await supabase.functions.invoke("translate-training", {
     body: languages?.length ? { training_id: trainingId, languages } : { training_id: trainingId },
   });
-  if (error) return { ok: false, message: error.message ?? "Worker nicht erreichbar" };
-  return { ok: true, message: typeof data === "object" ? "Übersetzungslauf gestartet" : String(data) };
+  if (error) return { ok: false, complete: false, message: error.message ?? "Worker nicht erreichbar" };
+
+  const complete = (data as any)?.complete !== false;
+  if (!complete) {
+    const uebersetzt = Object.values((data as any)?.languages ?? {})
+      .reduce((sum: number, c: any) => sum + (c?.translated ?? 0), 0);
+    return {
+      ok: true,
+      complete: false,
+      message: (data as any)?.message
+        ?? `Der Lauf wurde nach ${uebersetzt} Feldern beendet. Erneut starten setzt fort.`,
+    };
+  }
+  return { ok: true, complete: true, message: "Übersetzungslauf abgeschlossen" };
 }
 
 // ─── Übersetzbare Felder (identische Logik wie der Worker) ───────────────────
@@ -899,11 +923,127 @@ export async function fetchAdminMarkets(): Promise<AdminMarket[] | null> {
   }));
 }
 
+/**
+ * Sprachen für Auswahllisten – nur aktive.
+ *
+ * Eine deaktivierte Sprache soll nirgends mehr angeboten werden. Ihre bereits
+ * vorhandenen Übersetzungen bleiben davon unberührt und weiterhin lesbar;
+ * `fetchAllLanguages()` liefert sie für die Verwaltung mit.
+ */
 export async function fetchLanguages(): Promise<{ code: string; name: string }[] | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("language").select("code, name").order("name");
+  const { data, error } = await supabase.from("language")
+    .select("code, name").eq("active", true).order("sort").order("name");
   if (error || !data) return null;
   return data as any[];
+}
+
+// ─── Sprachstamm (R-08) ───────────────────────────────────────────────────────
+
+export type LanguageRow = {
+  code: string; name: string; active: boolean; sort: number;
+};
+
+/** Wo eine Sprache überall hängt – Grundlage jeder Entscheidung über sie. */
+export type LanguageUsage = {
+  maerkte: number; alsStandard: number; uebersetzungen: number;
+  trainings: number; dateien: number; benutzer: number;
+};
+
+export async function fetchAllLanguages(): Promise<LanguageRow[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("language")
+    .select("code, name, active, sort").order("sort").order("name");
+  if (error || !data) return null;
+  return (data as any[]).map(r => ({
+    code: r.code, name: r.name, active: r.active !== false, sort: r.sort ?? 100,
+  }));
+}
+
+export async function fetchLanguageUsage(code: string): Promise<LanguageUsage | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("language_usage", { p_code: code });
+  if (error || !data) return null;
+  const r = Array.isArray(data) ? data[0] : data;
+  if (!r) return null;
+  return {
+    maerkte: r.maerkte ?? 0, alsStandard: r.als_standard ?? 0,
+    uebersetzungen: r.uebersetzungen ?? 0, trainings: r.trainings ?? 0,
+    dateien: r.dateien ?? 0, benutzer: r.benutzer ?? 0,
+  };
+}
+
+/**
+ * ISO 639-1 mit optionaler Regionskennung: `de`, `pt-BR`.
+ *
+ * Bewusst streng: Der Code ist Fremdschlüssel in fünf Tabellen und geht als
+ * Zielsprache an den Übersetzungsdienst. Ein Tippfehler wäre später nur noch
+ * mit einer Migration zu korrigieren.
+ */
+export function isValidLanguageCode(code: string): boolean {
+  return /^[a-z]{2}(-[A-Z]{2})?$/.test(code);
+}
+
+export async function createLanguage(
+  code: string, name: string,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!supabase) return { ok: false, message: "Keine Datenbankverbindung" };
+  const normalized = code.trim();
+  if (!isValidLanguageCode(normalized)) {
+    return { ok: false, message: "Der Code muss ISO 639-1 folgen, zum Beispiel fr oder pt-BR." };
+  }
+  if (!name.trim()) return { ok: false, message: "Der Name darf nicht leer sein." };
+  const { error } = await supabase.from("language")
+    .insert({ code: normalized, name: name.trim(), active: true });
+  if (error) {
+    return {
+      ok: false,
+      message: error.code === "23505"
+        ? `Die Sprache „${normalized}" gibt es bereits.`
+        : error.message,
+    };
+  }
+  return { ok: true };
+}
+
+export async function renameLanguage(code: string, name: string): Promise<boolean> {
+  if (!supabase || !name.trim()) return false;
+  const { error } = await supabase.from("language").update({ name: name.trim() }).eq("code", code);
+  return !error;
+}
+
+/**
+ * Aktiviert oder deaktiviert eine Sprache.
+ *
+ * Über eine Datenbankfunktion, weil die Bedingungen dort geprüft werden müssen,
+ * wo die Daten liegen: Eine Standardsprache eines Marktes oder eine
+ * Mastersprache abzuschalten würde Veröffentlichungen ins Leere laufen lassen.
+ */
+export async function setLanguageActive(
+  code: string, active: boolean,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!supabase) return { ok: false, message: "Keine Datenbankverbindung" };
+  const { error } = await supabase.rpc("set_language_active", { p_code: code, p_active: active });
+  return error ? { ok: false, message: error.message } : { ok: true };
+}
+
+/**
+ * Löscht eine Sprache.
+ *
+ * Gelingt nur, solange nichts daran hängt – dafür sorgen die Fremdschlüssel
+ * mit `on delete restrict`. Das ist Absicht: Eine gelöschte Sprache würde
+ * Übersetzungsarbeit vernichten. Wer sie loswerden will, deaktiviert sie.
+ */
+export async function deleteLanguage(code: string): Promise<{ ok: boolean; message?: string }> {
+  if (!supabase) return { ok: false, message: "Keine Datenbankverbindung" };
+  const { error } = await supabase.from("language").delete().eq("code", code);
+  if (!error) return { ok: true };
+  return {
+    ok: false,
+    message: error.code === "23503"
+      ? "Die Sprache wird noch verwendet. Sie lässt sich deaktivieren, aber nicht löschen."
+      : error.message,
+  };
 }
 
 export async function createMarket(input: {

@@ -395,8 +395,15 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
       })
       .then(res => {
         if (!res) return;
-        if (res.ok) toast.success(res.message);
-        else toast.info("Übersetzungslauf konnte nicht gestartet werden – Worker ggf. nicht deployt.");
+        if (!res.ok) {
+          toast.info("Übersetzungslauf konnte nicht gestartet werden – Worker ggf. nicht deployt.");
+          return;
+        }
+        // Ein Lauf, der sein Budget erreicht hat, ist unvollständig (R-12).
+        // Ihn als Erfolg zu melden hinterließe lückenhafte Trainings, nach
+        // denen niemand sucht.
+        if (res.complete) toast.success(res.message);
+        else toast.warning(res.message, { duration: 9000 });
       })
       .catch(() => toast.info("Übersetzungslauf konnte nicht gestartet werden – Worker ggf. nicht deployt."));
   };

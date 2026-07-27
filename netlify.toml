@@ -73,6 +73,17 @@
   to = "/.netlify/functions/admin-smtp"
   status = 200
 
+# Benachrichtigungen (R-09): Warteschlange abarbeiten bzw. Kennzahlen lesen.
+[[redirects]]
+  from = "/api/notify/status"
+  to = "/.netlify/functions/notify"
+  status = 200
+
+[[redirects]]
+  from = "/api/notify"
+  to = "/.netlify/functions/notify"
+  status = 200
+
 # Medien (R-03): Regeln lesen, Upload anmelden, abgelegte Datei pruefen,
 # kurzlebige Abrufadresse holen, loeschen. Wieder von speziell nach allgemein –
 # die Funktion unterscheidet die Routen anhand des Originalpfads.

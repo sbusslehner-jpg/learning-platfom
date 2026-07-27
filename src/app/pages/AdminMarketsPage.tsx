@@ -12,6 +12,7 @@ import {
   updateMarketLanguages, updateMarketName,
   type AdminMarket,
 } from "../data/api";
+import { AdminLanguagesPanel } from "./AdminLanguagesPanel";
 
 // ─── Admin: Markets & Languages ───────────────────────────────────────────────
 // Echte Verwaltung über Supabase (market, market_language). Ohne verbundene
@@ -36,6 +37,7 @@ const EMPTY_FORM: FormState = { code: "", name: "", languages: [], defaultLangua
 export function AdminMarkets() {
   const { t } = useT();
 
+  const [tab, setTab] = useState<"markets" | "languages">("markets");
   const [markets, setMarkets] = useState<AdminMarket[]>([]);
   const [languages, setLanguages] = useState<Lang[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,13 +176,35 @@ export function AdminMarkets() {
             {loading ? t("common.loading") : `${markets.length} aktive Märkte · ${langCount} Sprachen`}
           </p>
         </div>
-        <button onClick={openForm} disabled={demo}
-          title={demo ? t("common.dbRequired") : undefined}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-[14px] transition-all ${FOCUS} ${demo ? "opacity-50 cursor-not-allowed" : ""}`}
-          style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
-          <Plus size={16} aria-hidden="true" /> Markt anlegen
-        </button>
+        {tab === "markets" && (
+          <button onClick={openForm} disabled={demo}
+            title={demo ? t("common.dbRequired") : undefined}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-[14px] transition-all ${FOCUS} ${demo ? "opacity-50 cursor-not-allowed" : ""}`}
+            style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
+            <Plus size={16} aria-hidden="true" /> Markt anlegen
+          </button>
+        )}
       </div>
+
+      {/* Märkte und Sprachstamm gehören zusammen: Ein Markt bekommt Sprachen
+          zugeordnet, die es im Stamm geben muss. Zwei getrennte Seiten hätten
+          den Weg dorthin unnötig lang gemacht. */}
+      <div className="flex items-center gap-1 border-b border-[#E1E5EA] mb-5" role="tablist">
+        {([["markets", "Märkte"], ["languages", "Sprachen"]] as const).map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2.5 text-[14px] font-medium border-b-2 -mb-px transition-colors ${FOCUS} ${
+              tab === key
+                ? "border-[#00C8C1] text-[#232830]"
+                : "border-transparent text-[#5A6472] hover:text-[#232830]"
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "languages" && <AdminLanguagesPanel readOnly={demo} />}
+      {tab === "markets" && (<>
 
       {demo && !loading && (
         <div className="mb-4 rounded-lg bg-[#FDF3E4] text-[#B45309] text-[12px] px-4 py-2 border border-[#F5E3C6]">
@@ -482,6 +506,7 @@ export function AdminMarkets() {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }
