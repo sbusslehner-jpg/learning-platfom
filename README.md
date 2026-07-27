@@ -78,7 +78,7 @@ und ein Selbsttest in einem Lauf – Details in
 - **Eigene Domain:** Netlify → Domain management → Add a domain → DNS-Eintrag (CNAME auf die Netlify-Subdomain) setzen; HTTPS-Zertifikat stellt Netlify automatisch aus.
 - **Übersetzungs-Worker deployen:** siehe [docs/uebersetzung-worker.md](docs/uebersetzung-worker.md) (Mistral-Key als Supabase-Secret).
 - **Impressum & Datenschutz:** Die Platzhalter unter `/impressum` und `/datenschutz` durch juristisch geprüfte Texte ersetzen.
-- **Berechtigungen produktiv schalten:** `supabase/migrations/0005_production_rls.sql` einspielen (nimmt die Demo-Schreibrechte zurück) und die Kontrollabfrage ausführen – siehe [docs/keycloak-setup.md](docs/keycloak-setup.md), Abschnitt 6.
+- **Berechtigungen produktiv schalten:** `supabase/migrations/0005_production_rls.sql` und `supabase/migrations/0006_fix_app_user_upsert.sql` einspielen (nimmt die Demo-Schreibrechte zurück bzw. repariert das Anlegen des Benutzerprofils) und die Kontrollabfragen ausführen – siehe [docs/keycloak-setup.md](docs/keycloak-setup.md), Abschnitt 6.
 - **Produktions-SMTP** für Keycloak samt SPF/DKIM/DMARC einrichten, sonst landen Einladungen im Spam.
 - **Noch offen:** serverseitiger Lernfortschritt, Datei-Uploads, Monitoring – Details in [docs/produktionsreife.md](docs/produktionsreife.md).
 

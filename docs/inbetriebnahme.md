@@ -247,6 +247,7 @@ zum ersten Mal anmeldest, könnte sich jemand anders als Administrator anmelden.
 
 Supabase → **SQL Editor** → Inhalt von
 `supabase/migrations/0005_production_rls.sql` einfügen → **Run**.
+Danach ebenso `supabase/migrations/0006_fix_app_user_upsert.sql`.
 
 Danach die Kontrollabfrage ausführen:
 
@@ -260,6 +261,24 @@ select tablename, policyname, roles
 
 Ab hier gilt: anonymer Zugriff auf Fachdaten ist gesperrt, Rechte kommen aus dem
 Token. Lernende sehen nur veröffentlichte Trainings ihrer Märkte.
+
+**Und die Gegenprobe, dass Anmeldungen ein Profil anlegen können** – genau der
+Aufruf, den der Token-Austausch macht:
+
+```sql
+insert into app_user (issuer, tenant, subject, name)
+values ('probe', 'probe', 'probe-1', 'Probeeintrag')
+on conflict (issuer, tenant, subject) do update set name = excluded.name;
+
+delete from app_user where issuer = 'probe';
+```
+
+Läuft das ohne Fehler durch, ist `0006` wirksam. Bricht es mit
+`42P10 – no unique or exclusion constraint matching the ON CONFLICT
+specification` ab, fehlt die Migration noch: Ohne sie meldet man sich zwar
+erfolgreich an, bekommt aber nie eine Zeile in `app_user` – und ohne die
+greift keine RLS-Policy, die `auth.uid()` mit `app_user.id` vergleicht.
+Die Oberfläche zeigt dann ihre Demo-Inhalte.
 
 ---
 
