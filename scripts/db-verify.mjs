@@ -98,8 +98,8 @@ try {
   console.log("\nA. Struktur");
 
   const rlsTables = ["user_group", "group_member", "training_group", "training_user",
-                     "rate_limit", "audit_event", "training", "progress", "app_user",
-                     "chapter", "content_element", "asset", "translation"];
+                     "rate_limit", "audit_event", "sync_outbox", "training", "progress",
+                     "app_user", "chapter", "content_element", "asset", "translation"];
   const rls = await c.query(
     `select relname, relrowsecurity from pg_class
       where relname = any($1) and relnamespace = 'public'::regnamespace`, [rlsTables]);
@@ -301,6 +301,27 @@ try {
   console.log("\nJ. Zähler");
   await denied("Der Zähler ist nicht lesbar", `select count(*) from rate_limit`);
   await denied("Der Zähler ist nicht zurücksetzbar", `delete from rate_limit`);
+
+  // ─── K. Offene Abgleiche (R-11) ───────────────────────────────────────────
+  console.log("\nK. Offene Abgleiche");
+  await asOwner();
+  await c.query(
+    `insert into sync_outbox (kind, external_id, payload, actor_label)
+     values ('user.roles','abnahme-extern-1','{"roles":["editor"]}'::jsonb,'abnahme@invalid')`);
+
+  await as(users.admin, ["admin"], []);
+  check("Verwaltung sieht offene Abgleiche", (await count("sync_outbox")) >= 1);
+  await denied("Verwaltung kann keinen Abgleich erfinden",
+    `insert into sync_outbox (kind, external_id) values ('user.roles','gefaelscht')`);
+  await denied("Verwaltung kann einen offenen Abgleich nicht wegwischen",
+    `update sync_outbox set resolved_at = now()`);
+  await denied("Verwaltung kann einen offenen Abgleich nicht löschen",
+    `delete from sync_outbox`);
+
+  await as(users.lerner, ["user"], ["ZZ"]);
+  const outboxAsUser = await count("sync_outbox");
+  check("Lernende sehen offene Abgleiche nicht",
+    outboxAsUser === 0 || outboxAsUser === null, `sah ${outboxAsUser}`);
 
 } catch (error) {
   fail++;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { updateKeycloakUser } from "./adminUserApi";
+import { updateKeycloakUser, type UserChangeResult } from "./adminUserApi";
 import { KEYCLOAK_MODE } from "./keycloakAuth";
 
 // ─── Datenschicht ─────────────────────────────────────────────────────────────
@@ -800,44 +800,81 @@ export async function createUser(input: {
   return { ok: true };
 }
 
-export async function setUserActive(userId: string, active: boolean, externalId?: string | null): Promise<boolean> {
-  if (!supabase) return false;
-  if (KEYCLOAK_MODE && !externalId) return false;
-  if (externalId && !(await updateKeycloakUser({ operation: "active", userId: externalId, active }))) return false;
-  const { error } = await supabase.from("app_user").update({ active }).eq("id", userId);
-  return !error;
+// ─── Benutzeränderungen (R-11) ────────────────────────────────────────────────
+//
+// Diese vier Funktionen schreiben NICHT mehr selbst nach Supabase. Sie stoßen
+// die Änderung an; Keycloak-Teil und Spiegelung laufen serverseitig in einem
+// Vorgang.
+//
+// Vorher stand hier: erst die Serverfunktion rufen, dann selbst spiegeln. Der
+// zweite Teil lief im Browser – ein geschlossener Tab genügte, damit Ansprüche
+// und Spiegelung dauerhaft auseinanderliefen. Bei Rollen und Märkten wurde
+// zuerst gelöscht und dann geschrieben; ein Abbruch dazwischen ließ die Person
+// ganz ohne Rolle zurück.
+//
+// `partial` ist deshalb kein Fehler, sondern eine eigene Aussage: Die Änderung
+// gilt bereits, nur die Anzeige in der Plattform hinkt hinterher. Die
+// aufrufende Seite soll das unterscheiden können.
+
+export type { UserChangeResult, UserChangeStatus } from "./adminUserApi";
+
+/**
+ * Im Demo-Betrieb ohne Keycloak bleibt die Spiegelung der einzige Speicher –
+ * dort wird weiterhin direkt geschrieben, sonst täte die Oberfläche gar nichts.
+ */
+async function demoMirror(write: () => PromiseLike<{ error: unknown }>): Promise<UserChangeResult> {
+  const { error } = await write();
+  return error ? { status: "failed", message: "Speichern fehlgeschlagen." } : { status: "ok" };
 }
 
-export async function setUserRoles(userId: string, roles: string[], externalId?: string | null): Promise<boolean> {
-  if (!supabase) return false;
-  if (KEYCLOAK_MODE && !externalId) return false;
-  if (externalId && !(await updateKeycloakUser({ operation: "roles", userId: externalId, roles }))) return false;
+export async function setUserActive(
+  userId: string, active: boolean, externalId?: string | null,
+): Promise<UserChangeResult> {
+  if (!supabase) return { status: "failed", message: "Keine Datenbankverbindung." };
+  if (KEYCLOAK_MODE) {
+    if (!externalId) return { status: "failed", message: "Konto ist der Anmeldung nicht zugeordnet." };
+    return updateKeycloakUser({ operation: "active", userId: externalId, active });
+  }
+  return demoMirror(() => supabase!.from("app_user").update({ active }).eq("id", userId));
+}
+
+export async function setUserRoles(
+  userId: string, roles: string[], externalId?: string | null,
+): Promise<UserChangeResult> {
+  if (!supabase) return { status: "failed", message: "Keine Datenbankverbindung." };
+  if (KEYCLOAK_MODE) {
+    if (!externalId) return { status: "failed", message: "Konto ist der Anmeldung nicht zugeordnet." };
+    return updateKeycloakUser({ operation: "roles", userId: externalId, roles });
+  }
   await supabase.from("user_role_assignment").delete().eq("user_id", userId);
-  if (!roles.length) return true;
-  const { error } = await supabase.from("user_role_assignment")
-    .insert(roles.map(role => ({ user_id: userId, role })));
-  return !error;
+  if (!roles.length) return { status: "ok" };
+  return demoMirror(() => supabase!.from("user_role_assignment")
+    .insert(roles.map(role => ({ user_id: userId, role }))));
 }
 
 export async function setUserMarkets(
   userId: string, marketIds: string[], marketCodes: string[], externalId?: string | null,
-): Promise<boolean> {
-  if (!supabase) return false;
-  if (KEYCLOAK_MODE && !externalId) return false;
-  if (externalId && !(await updateKeycloakUser({ operation: "markets", userId: externalId, markets: marketCodes }))) return false;
+): Promise<UserChangeResult> {
+  if (!supabase) return { status: "failed", message: "Keine Datenbankverbindung." };
+  if (KEYCLOAK_MODE) {
+    if (!externalId) return { status: "failed", message: "Konto ist der Anmeldung nicht zugeordnet." };
+    return updateKeycloakUser({ operation: "markets", userId: externalId, markets: marketCodes });
+  }
   await supabase.from("user_market").delete().eq("user_id", userId);
-  if (!marketIds.length) return true;
-  const { error } = await supabase.from("user_market")
-    .insert(marketIds.map(market_id => ({ user_id: userId, market_id })));
-  return !error;
+  if (!marketIds.length) return { status: "ok" };
+  return demoMirror(() => supabase!.from("user_market")
+    .insert(marketIds.map(market_id => ({ user_id: userId, market_id }))));
 }
 
-export async function deleteUser(userId: string, externalId?: string | null): Promise<boolean> {
-  if (!supabase) return false;
-  if (KEYCLOAK_MODE && !externalId) return false;
-  if (externalId && !(await updateKeycloakUser({ operation: "delete", userId: externalId }))) return false;
-  const { error } = await supabase.from("app_user").delete().eq("id", userId);
-  return !error;
+export async function deleteUser(
+  userId: string, externalId?: string | null,
+): Promise<UserChangeResult> {
+  if (!supabase) return { status: "failed", message: "Keine Datenbankverbindung." };
+  if (KEYCLOAK_MODE) {
+    if (!externalId) return { status: "failed", message: "Konto ist der Anmeldung nicht zugeordnet." };
+    return updateKeycloakUser({ operation: "delete", userId: externalId });
+  }
+  return demoMirror(() => supabase!.from("app_user").delete().eq("id", userId));
 }
 
 // ─── Märkte & Sprachen ───────────────────────────────────────────────────────

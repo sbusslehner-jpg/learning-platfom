@@ -76,6 +76,24 @@ function callsTo(method, pathFragment) {
   return mock.calls.filter((c) => c.method === method && c.path.includes(pathFragment));
 }
 
+/**
+ * Wartet auf ein Audit-Ereignis.
+ *
+ * Audit-Aufrufe sind bewusst "fire and forget": Die protokollierte Aktion ist
+ * bereits geschehen, das Protokoll darf sie nicht nachtraeglich scheitern
+ * lassen. Fuer den Test heisst das, dass ein Ereignis verspaetet eintreffen
+ * kann - auch erst im naechsten Test. Deshalb macht jeder Test sein Ereignis an
+ * einem eigenen Akteur fest, statt sich auf die Reihenfolge zu verlassen.
+ */
+async function waitFor(predicate) {
+  for (let i = 0; i < 40; i++) {
+    const hit = (mock.auditEvents ?? []).find(predicate);
+    if (hit) return hit;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  return null;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -229,7 +247,30 @@ const server = http.createServer(async (req, res) => {
     const activeFlag = mock.appUserActive;
     if (method === "POST") return sendJson(res, 201, [{ id: APP_USER_ID, active: activeFlag }]);
     if (method === "PATCH") return sendJson(res, 200, [{ id: APP_USER_ID, active: activeFlag }]);
-    if (method === "GET") return sendJson(res, 200, []);
+    if (method === "DELETE") { res.writeHead(204); return res.end(); }
+    if (method === "GET") {
+      // Die Spiegelung (R-11) sucht hier die app_user-Zeile zur Keycloak-Kennung.
+      // `mock.appUserMirrored = false` stellt den Fall „noch nicht gespiegelt"
+      // nach – dann muss der Aufruf als Teilerfolg enden, nicht als Erfolg.
+      return sendJson(res, 200, mock.appUserMirrored ? [{ id: APP_USER_ID }] : []);
+    }
+  }
+  // ── Offene Abgleiche (0014) ───────────────────────────────────────────────
+  if (path === "/rest/v1/sync_outbox") {
+    if (mock.outboxStatus >= 400) {
+      return sendJson(res, mock.outboxStatus, { code: "42501", message: "denied" });
+    }
+    if (method === "POST") {
+      (mock.outbox ??= []).push(...(Array.isArray(body) ? body : [body]));
+      res.writeHead(201); return res.end();
+    }
+    if (method === "PATCH") {
+      if (body?.resolved_at) mock.outbox = [];
+      res.writeHead(204); return res.end();
+    }
+    if (method === "GET") {
+      return sendJson(res, 200, (mock.outbox ?? []).map((row, i) => ({ id: i + 1, ...row })));
+    }
   }
   // ── Missbrauchsschutz und Audit (0010) ────────────────────────────────────
   if (path === "/rest/v1/rpc/rate_limit_hit") {
@@ -293,6 +334,9 @@ beforeEach(() => {
   mock.auditEvents = [];
   mock.currentRoles = [{ id: "role-id-user", name: "user" }];
   mock.existingUser = { id: NEW_KEYCLOAK_USER_ID, enabled: true, attributes: { tenant: ["PHS_AT"], markets: ["DE"] } };
+  mock.appUserMirrored = true;
+  mock.outbox = [];
+  mock.outboxStatus = 201;
 });
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -983,6 +1027,153 @@ describe("POST /api/admin/user", () => {
   });
 });
 
+// ── Spiegelung als Saga (R-11) ───────────────────────────────────────────────
+//
+// Vorher lief die Spiegelung nach Supabase im Browser, nach dem Keycloak-Teil.
+// Scheiterte sie, liefen Ansprüche und Abschrift auseinander, ohne dass jemand
+// es erfuhr. Geprüft wird deshalb vor allem der Fall, in dem der zweite Schritt
+// misslingt.
+describe("Benutzeraenderung: Keycloak und Spiegelung in einem Vorgang", () => {
+  const userEvent = (token, body) => eventFor(token, { path: "/api/admin/user", body });
+  const adminToken = () => mintToken({ roles: ["admin"] });
+
+  test("gelingt beides, meldet die Antwort ok", async () => {
+    const response = await adminUserHandler(userEvent(
+      await adminToken(),
+      { operation: "roles", userId: NEW_KEYCLOAK_USER_ID, roles: ["editor"] },
+    ));
+    assert.equal(response.statusCode, 200);
+    assert.equal(parse(response).status, "ok");
+    assert.equal(mock.outbox.length, 0, "es darf nichts offen bleiben");
+  });
+
+  test("die Spiegelung laeuft serverseitig, nicht mehr im Browser", async () => {
+    await adminUserHandler(userEvent(
+      await adminToken(),
+      { operation: "roles", userId: NEW_KEYCLOAK_USER_ID, roles: ["editor"] },
+    ));
+    // Die Serverfunktion muss die Rollen selbst schreiben – frueher tat das
+    // der Browser, und genau dazwischen ging die Aenderung verloren.
+    assert.ok(callsTo("POST", "/rest/v1/user_role_assignment").length >= 1,
+      "Rollen wurden nicht serverseitig gespiegelt");
+  });
+
+  test("Rollen werden gesetzt, bevor die alten entfernt werden", async () => {
+    // Andersherum stuende die Person zwischen beiden Anweisungen ohne jede
+    // Rolle da. Genau das war der Fehler in der Browser-Fassung.
+    await adminUserHandler(userEvent(
+      await adminToken(),
+      { operation: "roles", userId: NEW_KEYCLOAK_USER_ID, roles: ["editor"] },
+    ));
+    const mirror = mock.calls.filter((c) => c.path.startsWith("/rest/v1/user_role_assignment"));
+    assert.ok(mirror.length >= 2, "zu wenige Spiegelungsaufrufe");
+    assert.equal(mirror[0].method, "POST", "es wurde zuerst geloescht statt geschrieben");
+  });
+
+  test("scheitert nur die Spiegelung, ist das Ergebnis partial – nicht Fehler", async () => {
+    // Die Keycloak-Aenderung IST passiert. Ein Fehlercode wuerde zum erneuten
+    // Versuch einladen und sie ein zweites Mal ausloesen.
+    mock.appUserMirrored = false;
+    const response = await adminUserHandler(userEvent(
+      await adminToken(),
+      { operation: "roles", userId: NEW_KEYCLOAK_USER_ID, roles: ["editor"] },
+    ));
+    assert.equal(response.statusCode, 200);
+    assert.equal(parse(response).status, "partial");
+    assert.match(parse(response).message, /steht noch aus/);
+  });
+
+  test("ein Teilfehler hinterlaesst einen offenen Abgleich", async () => {
+    mock.appUserMirrored = false;
+    await adminUserHandler(userEvent(
+      await adminToken(),
+      { operation: "markets", userId: NEW_KEYCLOAK_USER_ID, markets: ["AT"] },
+    ));
+    assert.equal(mock.outbox.length, 1, "der offene Abgleich fehlt");
+    assert.equal(mock.outbox[0].kind, "user.markets");
+    assert.equal(mock.outbox[0].external_id, NEW_KEYCLOAK_USER_ID);
+    // Der ZIELZUSTAND wird festgehalten, nicht die Aenderung: Ein spaeterer
+    // Versuch soll denselben Endzustand herstellen.
+    assert.deepEqual(mock.outbox[0].payload.markets, ["AT"]);
+  });
+
+  test("scheitert schon Keycloak, wird gar nicht gespiegelt", async () => {
+    mock.roleMappingStatus = 500;
+    const response = await adminUserHandler(userEvent(
+      await adminToken(),
+      { operation: "roles", userId: NEW_KEYCLOAK_USER_ID, roles: ["editor"] },
+    ));
+    assert.equal(response.statusCode, 502);
+    assert.equal(callsTo("POST", "/rest/v1/user_role_assignment").length, 0,
+      "es wurde gespiegelt, obwohl das fuehrende System nicht geaendert wurde");
+    assert.equal(mock.outbox.length, 0, "kein offener Abgleich fuer eine nie erfolgte Aenderung");
+  });
+
+  test("das Protokoll nennt die handelnde Person, nicht 'unbekannt'", async () => {
+    // Die Identitaet fehlte frueher in der Antwort der Rechtepruefung; das
+    // Protokoll schrieb dadurch bei JEDER Benutzeraenderung "unbekannt".
+    const actor = "chefin-r11@example.net";
+    await adminUserHandler(userEvent(
+      await mintToken({ roles: ["admin"], email: actor }),
+      { operation: "active", userId: NEW_KEYCLOAK_USER_ID, active: false },
+    ));
+    const ev = await waitFor((e) => e.action === "user.active" && e.actor_label === actor);
+    assert.equal(ev.actor_label, actor);
+  });
+
+  test("der Teilfehler wird als solcher protokolliert", async () => {
+    const actor = "chefin-partial@example.net";
+    mock.appUserMirrored = false;
+    await adminUserHandler(userEvent(
+      await mintToken({ roles: ["admin"], email: actor }),
+      { operation: "active", userId: NEW_KEYCLOAK_USER_ID, active: true },
+    ));
+    const ev = await waitFor((e) => e.actor_label === actor && e.action === "user.active");
+    assert.equal(ev.outcome, "partial");
+  });
+});
+
+describe("Offene Abgleiche nachholen", () => {
+  const reconcileEvent = (token) => eventFor(token, { path: "/api/admin/user/reconcile", body: {} });
+
+  test("Lernende duerfen nicht nachholen", async () => {
+    const response = await adminUserHandler(reconcileEvent(await mintToken({ roles: ["user"] })));
+    assert.equal(response.statusCode, 403);
+  });
+
+  test("ohne offene Eintraege passiert nichts", async () => {
+    const response = await adminUserHandler(reconcileEvent(await mintToken({ roles: ["admin"] })));
+    assert.equal(response.statusCode, 200);
+    assert.equal(parse(response).checked, 0);
+  });
+
+  test("ein offener Abgleich wird nachgeholt und verschwindet", async () => {
+    mock.outbox = [{
+      kind: "user.roles", external_id: NEW_KEYCLOAK_USER_ID,
+      payload: { roles: ["editor"] }, attempts: 1,
+    }];
+    const response = await adminUserHandler(reconcileEvent(await mintToken({ roles: ["admin"] })));
+    assert.equal(response.statusCode, 200);
+    const body = parse(response);
+    assert.equal(body.checked, 1);
+    assert.equal(body.resolved, 1);
+    assert.equal(body.failed, 0);
+  });
+
+  test("bleibt der Grund bestehen, bleibt der Eintrag offen", async () => {
+    mock.appUserMirrored = false;
+    mock.outbox = [{
+      kind: "user.roles", external_id: NEW_KEYCLOAK_USER_ID,
+      payload: { roles: ["editor"] }, attempts: 1,
+    }];
+    const response = await adminUserHandler(reconcileEvent(await mintToken({ roles: ["admin"] })));
+    const body = parse(response);
+    assert.equal(body.resolved, 0);
+    assert.equal(body.failed, 1);
+    assert.equal(mock.outbox.length, 1, "der Eintrag darf nicht verschwinden");
+  });
+});
+
 // ── Mail-Einstellungen (admin-smtp) ──────────────────────────────────────────
 // Schwerpunkt: Adminpflicht, Schutz des Passworts und die Frage, wer den
 // Empfänger des Testversands bestimmt.
@@ -1178,18 +1369,6 @@ describe("Rate-Limit und Audit", () => {
     const response = await inviteHandler(inviteEvent(token, VALID_INVITE));
     assert.equal(response.statusCode, 201, "Ausfall der Zählung darf nicht sperren");
   });
-
-  // Audit-Aufrufe sind bewusst "fire and forget" – ein Ereignis aus dem
-  // vorigen Test kann verspaetet eintreffen und im frisch geleerten Array
-  // landen. Deshalb wird jeder Test an einem eigenen Akteur festgemacht.
-  const waitFor = async (predicate) => {
-    for (let i = 0; i < 40; i++) {
-      const hit = mock.auditEvents.find(predicate);
-      if (hit) return hit;
-      await new Promise((r) => setTimeout(r, 10));
-    }
-    return null;
-  };
 
   test("erfolgreiche Einladung schreibt ein Audit-Ereignis", async () => {
     const actor = "chefin-erfolg@example.net";

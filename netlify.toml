@@ -47,6 +47,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/admin/user/reconcile"
+  to = "/.netlify/functions/admin-user"
+  status = 200
+
+[[redirects]]
+  from = "/api/admin/user/pending"
+  to = "/.netlify/functions/admin-user"
+  status = 200
+
+[[redirects]]
   from = "/api/admin/user"
   to = "/.netlify/functions/admin-user"
   status = 200

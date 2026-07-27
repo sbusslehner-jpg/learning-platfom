@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, Check, Map as MapIcon, MailPlus, Plus, Search, Send, Shield,
+  AlertCircle, AlertTriangle, Check, Map as MapIcon, MailPlus, Plus, RefreshCw, Search, Send, Shield,
   ToggleLeft, ToggleRight, Trash2, Users as UsersIcon, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -12,8 +12,9 @@ import { USERS } from "../data/demo";
 import {
   createUser, deleteUser, fetchAdminMarkets, fetchUsers,
   setUserActive, setUserMarkets, setUserRoles,
-  type AdminMarket, type AdminUser,
+  type AdminMarket, type AdminUser, type UserChangeResult,
 } from "../data/api";
+import { fetchPendingSync, reconcileUserSync, type PendingSync } from "../data/adminUserApi";
 import { INVITE_AVAILABLE, inviteUser, resendInvite } from "../data/inviteApi";
 import { AdminGroupsPanel } from "./AdminGroupsPanel";
 import { DEMO_MODE } from "../data/runtime";
@@ -108,10 +109,33 @@ export function AdminUsers() {
     setLoading(false);
   }, []);
 
+  // ─── Offene Abgleiche (R-11) ───────────────────────────────────────────────
+  // Eine Zeile hier bedeutet: Die Änderung IST in der Anmeldung wirksam, die
+  // Übernahme in die Plattform steht noch aus. Das muss sichtbar sein – ein
+  // Fehlschlag, den niemand sieht, wird nicht behoben.
+  const [pending, setPending] = useState<PendingSync[]>([]);
+  const [reconciling, setReconciling] = useState(false);
+
+  const loadPending = useCallback(async () => {
+    const rows = await fetchPendingSync();
+    setPending(rows ?? []);
+  }, []);
+
   useEffect(() => {
     void load();
+    void loadPending();
     void fetchAdminMarkets().then(m => setMarkets(m ?? []));
-  }, [load]);
+  }, [load, loadPending]);
+
+  const runReconcile = async () => {
+    setReconciling(true);
+    const result = await reconcileUserSync();
+    setReconciling(false);
+    if (result.status === "failed") toast.error(result.message ?? "Nachholen fehlgeschlagen.");
+    else toast.success(result.message ?? "Abgleich ausgeführt.");
+    await loadPending();
+    await load(true);
+  };
 
   const closeEditors = () => {
     setEditRolesId(null);
@@ -135,23 +159,47 @@ export function AdminUsers() {
 
   // ─── Mutationen ────────────────────────────────────────────────────────────
 
+  /**
+   * Wertet das Ergebnis einer Benutzeränderung aus (R-11).
+   *
+   * Drei Zustände, nicht zwei. `partial` bedeutet: Die Änderung gilt bereits in
+   * der Anmeldung, nur die Übernahme in die Plattform steht aus. Das als Fehler
+   * zu melden wäre falsch – die handelnde Person würde es erneut versuchen und
+   * die Keycloak-Änderung ein zweites Mal auslösen. Es zu verschweigen wäre
+   * schlimmer, denn dann bliebe die Abweichung unbemerkt.
+   *
+   * @returns true, wenn die Liste neu geladen werden soll
+   */
+  const report = (result: UserChangeResult, erfolg: string): boolean => {
+    if (result.status === "failed") {
+      toast.error(result.message ?? t("common.dbRequired"));
+      return false;
+    }
+    if (result.status === "partial") {
+      toast.warning(result.message ?? "Die Übernahme in die Plattform steht noch aus.", {
+        duration: 8000,
+      });
+      void loadPending();
+      return true;
+    }
+    toast.success(erfolg);
+    return true;
+  };
+
   const toggleActive = async (u: AdminUser) => {
     setBusyId(u.id);
-    const ok = await setUserActive(u.id, !u.active, u.externalId);
+    const result = await setUserActive(u.id, !u.active, u.externalId);
     setBusyId(null);
-    if (!ok) { toast.error(t("common.dbRequired")); return; }
-    toast.success(u.active ? "Benutzer deaktiviert" : "Benutzer aktiviert");
-    await load(true);
+    if (report(result, u.active ? "Benutzer deaktiviert" : "Benutzer aktiviert")) await load(true);
   };
 
   const saveRoles = async (userId: string) => {
     if (!roleDraft.length) { toast.error("Mindestens eine Rolle auswählen"); return; }
     setBusyId(userId);
     const user = users.find(u => u.id === userId);
-    const ok = await setUserRoles(userId, roleDraft, user?.externalId);
+    const result = await setUserRoles(userId, roleDraft, user?.externalId);
     setBusyId(null);
-    if (!ok) { toast.error(t("common.dbRequired")); return; }
-    toast.success("Rollen gespeichert");
+    if (!report(result, "Rollen gespeichert")) return;
     setEditRolesId(null);
     await load(true);
   };
@@ -160,10 +208,9 @@ export function AdminUsers() {
     setBusyId(userId);
     const user = users.find(u => u.id === userId);
     const marketCodes = markets.filter(m => marketDraft.includes(m.id)).map(m => m.code);
-    const ok = await setUserMarkets(userId, marketDraft, marketCodes, user?.externalId);
+    const result = await setUserMarkets(userId, marketDraft, marketCodes, user?.externalId);
     setBusyId(null);
-    if (!ok) { toast.error(t("common.dbRequired")); return; }
-    toast.success("Märkte gespeichert");
+    if (!report(result, "Märkte gespeichert")) return;
     setEditMarketsId(null);
     await load(true);
   };
@@ -171,12 +218,10 @@ export function AdminUsers() {
   const removeUser = async (userId: string) => {
     setBusyId(userId);
     const user = users.find(u => u.id === userId);
-    const ok = await deleteUser(userId, user?.externalId);
+    const result = await deleteUser(userId, user?.externalId);
     setBusyId(null);
     setConfirmId(null);
-    if (!ok) { toast.error(t("common.dbRequired")); return; }
-    toast.success("Benutzer gelöscht");
-    await load(true);
+    if (report(result, "Benutzer gelöscht")) await load(true);
   };
 
   const submitForm = async () => {
@@ -280,6 +325,41 @@ export function AdminUsers() {
       {demo && !loading && (
         <div className="mb-4 rounded-lg bg-[#FDF3E4] text-[#B45309] text-[12px] px-4 py-2 border border-[#F5E3C6]">
           Demo-Ansicht – mit verbundener Datenbank wird hier echt verwaltet.
+        </div>
+      )}
+
+      {/* Offene Abgleiche (R-11) – nur sichtbar, wenn es welche gibt. */}
+      {pending.length > 0 && (
+        <div className="mb-4 rounded-lg bg-[#FDF3E4] border border-[#F5E3C6] px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle size={16} className="text-[#B45309] shrink-0 mt-0.5" aria-hidden />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-[#B45309] mb-1">
+                {pending.length} Änderung(en) noch nicht in die Plattform übernommen
+              </p>
+              <p className="text-[12px] text-[#B45309] mb-2">
+                Die Änderungen sind in der Anmeldung bereits wirksam – Rollen und
+                Rechte stimmen also. Nur die Anzeige in dieser Liste hinkt
+                hinterher, bis der Abgleich nachgeholt wurde.
+              </p>
+              <ul className="text-[11px] text-[#B45309] space-y-0.5 mb-2.5">
+                {pending.slice(0, 5).map(p => (
+                  <li key={p.id}>
+                    <span className="font-mono">{p.kind}</span>
+                    {" · "}{new Date(p.createdAt).toLocaleString("de-AT")}
+                    {p.attempts > 1 ? ` · ${p.attempts} Versuche` : ""}
+                    {p.lastError ? ` · ${p.lastError}` : ""}
+                  </li>
+                ))}
+                {pending.length > 5 && <li>… und {pending.length - 5} weitere</li>}
+              </ul>
+              <button type="button" onClick={() => void runReconcile()} disabled={reconciling}
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#B45309] text-white text-[12px] font-semibold hover:bg-[#96450A] disabled:opacity-50 transition-colors ${FOCUS}`}>
+                <RefreshCw size={13} className={reconciling ? "animate-spin" : ""} aria-hidden />
+                {reconciling ? "Wird nachgeholt …" : "Jetzt nachholen"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
