@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "npm run test:unit && npm run test:functions && npm run test:e2e && npm run test:keycloak",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run typecheck && npm run test:unit && npm run test:functions && npm run test:e2e && npm run test:keycloak",
     "test:unit": "node --experimental-strip-types --test supabase/functions/_shared/sso.test.ts tests/legal.test.ts",
-    "test:functions": "node --test tests/auth-functions.test.mjs",
+    "test:functions": "node --test tests/auth-functions.test.mjs tests/media-policy.test.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "test:keycloak": "node tests/keycloak-mode.mjs",
     "db:migrate": "node scripts/db-migrate.mjs",
@@ -67,12 +68,14 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
     "pg": "^8.22.0",
     "playwright": "^1.62.0",
     "tailwindcss": "4.1.12",
+    "typescript": "^5.7.3",
     "vite": "^6.4.3"
   }
 }

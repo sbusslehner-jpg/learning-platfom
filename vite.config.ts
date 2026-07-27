@@ -90,7 +90,13 @@ function securityHeadersPlugin(): Plugin {
       const connect = ["'self'", supabase, keycloak].filter(Boolean)
       // Supabase-Realtime läuft über WebSockets auf demselben Host.
       if (supabase) connect.push(supabase.replace(/^https:/, 'wss:'))
-      const img = ["'self'", 'data:', supabase].filter(Boolean)
+      // `blob:` deckt die kurzlebigen Objekt-URLs ab, mit denen die Redaktion
+      // vor dem Hochladen Laufzeit und Abmessungen aus der Datei liest.
+      const img = ["'self'", 'data:', 'blob:', supabase].filter(Boolean)
+      // Videos liegen in derselben Ablage wie die Bilder. Ohne `media-src`
+      // greift `default-src 'self'` – und der Player bliebe stumm, ohne dass
+      // ein Fehler im Netzwerkprotokoll erkennbar wäre.
+      const media = ["'self'", 'blob:', supabase].filter(Boolean)
 
       const csp = [
         "default-src 'self'",
@@ -104,6 +110,7 @@ function securityHeadersPlugin(): Plugin {
         "style-src 'self'",
         "style-src-attr 'unsafe-inline'",
         `img-src ${img.join(' ')}`,
+        `media-src ${media.join(' ')}`,
         "font-src 'self' data:",
         `connect-src ${connect.join(' ')}`,
         // Formulare gehen ausschließlich an die eigenen Endpunkte; die Anmeldung

@@ -93,7 +93,13 @@ export async function fetchModuleTrainings(moduleSlug: string): Promise<Training
 
 // ─── Lernansicht ──────────────────────────────────────────────────────────────
 
-export type LearningElement = { id: string; type: string; payload: any };
+/**
+ * `assetId` verweist auf eine hinterlegte Datei (R-03). Der Verweis allein
+ * gibt noch nichts preis: Die Abrufadresse holt die Lernansicht einzeln über
+ * `/api/media/url`, und die ist wenige Minuten gültig. Fehlt der Verweis, hat
+ * die Redaktion für dieses Element noch keine Datei hinterlegt.
+ */
+export type LearningElement = { id: string; type: string; payload: any; assetId: string | null };
 export type LearningChapter = { id: string; title: string; elements: LearningElement[] };
 export type LearningTraining = {
   fromDb: boolean;
@@ -105,11 +111,24 @@ export type LearningTraining = {
 /** Übersetzungen als Map: "<ref_type>:<ref_id>:<field>" → { text, status } */
 export type TranslationMap = Record<string, { text: string | null; status: string }>;
 
+/**
+ * Sucht die freigegebene Datei eines Elements.
+ *
+ * Nur `ready` zählt. Eine noch nicht geprüfte oder abgelehnte Datei ist eine
+ * Redaktionsangelegenheit – Lernenden einen Verweis darauf zu geben, hieße
+ * ihnen einen toten Abruf anzubieten.
+ */
+function readyAssetId(assets: unknown): string | null {
+  if (!Array.isArray(assets)) return null;
+  const ready = assets.find((a: any) => a?.status === "ready" && typeof a?.id === "string");
+  return ready ? (ready as any).id : null;
+}
+
 export async function fetchLearningTraining(slug: string): Promise<LearningTraining | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("training")
-    .select("id, title, chapter(id, title, sort, content_element(id, type, sort, payload))")
+    .select("id, title, chapter(id, title, sort, content_element(id, type, sort, payload, asset(id, status)))")
     .eq("slug", slug)
     .eq("status", "published")
     .single();
@@ -121,7 +140,12 @@ export async function fetchLearningTraining(slug: string): Promise<LearningTrain
       title: c.title,
       elements: (c.content_element ?? [])
         .sort((a: any, b: any) => a.sort - b.sort)
-        .map((e: any) => ({ id: e.id, type: e.type, payload: e.payload ?? {} })),
+        .map((e: any) => ({
+          id: e.id,
+          type: e.type,
+          payload: e.payload ?? {},
+          assetId: readyAssetId(e.asset),
+        })),
     }));
   if (!chapters.length) return null;
   return { fromDb: true, id: (data as any).id, title: (data as any).title, chapters };
@@ -257,7 +281,18 @@ export async function createTraining(moduleId: string, title: string): Promise<s
 
 // ─── Trainingseditor (ein Training mit Kapiteln und Elementen) ───────────────
 
-export type EditorElement = { id: string; type: string; sort: number; payload: any };
+/**
+ * In der Redaktion ist auch eine noch nicht freigegebene Datei interessant:
+ * Sie erklärt, warum ein Element in der Lernansicht (noch) leer wirkt. Deshalb
+ * kommt hier – anders als in der Lernansicht – der Status mit.
+ */
+export type EditorAsset = {
+  id: string; status: "pending" | "ready" | "rejected";
+  mime: string; originalName: string | null; sizeBytes: number | null;
+};
+export type EditorElement = {
+  id: string; type: string; sort: number; payload: any; asset: EditorAsset | null;
+};
 export type EditorChapter = { id: string; title: string; sort: number; elements: EditorElement[] };
 export type EditorTraining = {
   id: string; title: string; description: string | null; status: UiStatus;
@@ -268,7 +303,7 @@ export async function fetchEditorTraining(trainingId: string): Promise<EditorTra
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("training")
-    .select("id, title, description, status, module(title, product(title)), chapter(id, title, sort, content_element(id, type, sort, payload))")
+    .select("id, title, description, status, module(title, product(title)), chapter(id, title, sort, content_element(id, type, sort, payload, asset(id, status, mime, original_name, size_bytes)))")
     .eq("id", trainingId)
     .single();
   if (error || !data) return null;
@@ -286,8 +321,31 @@ export async function fetchEditorTraining(trainingId: string): Promise<EditorTra
         id: c.id, title: c.title, sort: c.sort,
         elements: (c.content_element ?? [])
           .sort((a: any, b: any) => a.sort - b.sort)
-          .map((e: any) => ({ id: e.id, type: e.type, sort: e.sort, payload: e.payload ?? {} })),
+          .map((e: any) => ({
+            id: e.id, type: e.type, sort: e.sort, payload: e.payload ?? {},
+            asset: editorAsset(e.asset),
+          })),
       })),
+  };
+}
+
+/**
+ * Nimmt die jüngste Datei eines Elements.
+ *
+ * Ein eindeutiger Index erlaubt je Element und Sprache nur eine – mehrere
+ * kommen also nur zustande, wenn Sprachfassungen im Spiel sind. Für die
+ * Redaktionsansicht genügt eine; welche, ist dort nicht entscheidend.
+ */
+function editorAsset(assets: unknown): EditorAsset | null {
+  if (!Array.isArray(assets) || assets.length === 0) return null;
+  const a: any = assets.find((x: any) => x?.status === "ready") ?? assets[0];
+  if (!a || typeof a.id !== "string") return null;
+  return {
+    id: a.id,
+    status: a.status === "ready" || a.status === "rejected" ? a.status : "pending",
+    mime: String(a.mime ?? ""),
+    originalName: a.original_name ?? null,
+    sizeBytes: typeof a.size_bytes === "number" ? a.size_bytes : null,
   };
 }
 
@@ -334,7 +392,7 @@ export async function createElement(chapterId: string, type: string, sort: numbe
     .insert({ chapter_id: chapterId, type, sort, payload }).select("id, type, sort, payload").single();
   if (error || !data) return null;
   const d = data as any;
-  return { id: d.id, type: d.type, sort: d.sort, payload: d.payload ?? {} };
+  return { id: d.id, type: d.type, sort: d.sort, payload: d.payload ?? {}, asset: null };
 }
 
 export async function updateElementPayload(id: string, payload: any): Promise<boolean> {
@@ -472,27 +530,27 @@ export async function fetchTrainingAssignment(trainingId: string): Promise<Train
   };
 }
 
-/** Setzt Gruppen- und Einzelzuweisungen eines Trainings auf genau diese Listen. */
+/**
+ * Setzt Gruppen- und Einzelzuweisungen eines Trainings auf genau diese Listen.
+ *
+ * Über eine Datenbankfunktion, nicht über mehrere Einzelaufrufe: Löschen und
+ * Neuschreiben müssen zusammen gelingen oder zusammen ausbleiben. Eine frühere
+ * Fassung löschte erst und schrieb dann – brach das Schreiben ab, stand das
+ * Training ohne jede Zuweisung da und verschwand stillschweigend aus den
+ * Katalogen aller Lernenden, die es über ihre Gruppe gesehen hatten.
+ */
 export async function setTrainingAssignment(
   trainingId: string,
   groupIds: string[],
   userIds: string[],
 ): Promise<boolean> {
   if (!supabase) return false;
-  const g = [...new Set(groupIds)];
-  const u = [...new Set(userIds)];
-
-  const cleared = await Promise.all([
-    supabase.from("training_group").delete().eq("training_id", trainingId),
-    supabase.from("training_user").delete().eq("training_id", trainingId),
-  ]);
-  if (cleared.some(r => r.error)) return false;
-
-  const writes = [];
-  if (g.length) writes.push(supabase.from("training_group").insert(g.map(group_id => ({ training_id: trainingId, group_id }))));
-  if (u.length) writes.push(supabase.from("training_user").insert(u.map(user_id => ({ training_id: trainingId, user_id }))));
-  const results = await Promise.all(writes);
-  return !results.some(r => r.error);
+  const { error } = await supabase.rpc("set_training_assignment", {
+    p_training_id: trainingId,
+    p_group_ids: [...new Set(groupIds)],
+    p_user_ids: [...new Set(userIds)],
+  });
+  return !error;
 }
 
 export async function archiveTraining(trainingId: string): Promise<boolean> {

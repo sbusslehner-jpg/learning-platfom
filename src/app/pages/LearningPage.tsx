@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import {
-  ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, Download, Eye,
-  ExternalLink, Globe, Pause, Play,
+  ArrowRight, BookOpen, Check, CheckCircle2, ChevronLeft, Download,
+  ExternalLink, FileWarning, Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ProgressBar } from "../components/ProgressBar";
@@ -12,6 +12,7 @@ import {
   completeChapter, fetchCompletedChapterIds, fetchLearningTraining, fetchTranslationMap,
   type LearningChapter, type LearningElement, type LearningTraining, type TranslationMap,
 } from "../data/api";
+import { fetchMediaUrl, type MediaRef } from "../data/mediaApi";
 import { DEMO_MODE } from "../data/runtime";
 import { useT } from "../i18n";
 import { safeContentUrl, sanitizeContentHtml } from "../security/content";
@@ -28,27 +29,27 @@ const FALLBACK_TRAINING: LearningTraining = {
   title: "DSR – Konfiguration im Einzelhandel",
   chapters: [
     { id: "1", title: "Überblick & Konfigurationsebenen", elements: [
-      { id: "1-1", type: "text", payload: { body: "<p>Inhalt für Kapitel 1: Überblick & Konfigurationsebenen. In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
+      { id: "1-1", type: "text", assetId: null, payload: { body: "<p>Inhalt für Kapitel 1: Überblick & Konfigurationsebenen. In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
     ]},
     { id: "2", title: "Rollen & Rechte (Dealer_Admin)", elements: [
-      { id: "2-1", type: "text", payload: { body: "<p>Inhalt für Kapitel 2: Rollen & Rechte (Dealer_Admin). In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
+      { id: "2-1", type: "text", assetId: null, payload: { body: "<p>Inhalt für Kapitel 2: Rollen & Rechte (Dealer_Admin). In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
     ]},
     { id: "3", title: "DealerData-Synchronisation", elements: [
-      { id: "3-1", type: "video", payload: { title: "DealerData-Synchronisation – Einführung", duration: "6:42" } },
-      { id: "3-2", type: "text", payload: { body: "<p>Die DealerData-Synchronisation stellt sicher, dass alle Fahrzeug- und Kundendaten zwischen dem DSR-System und dem Händler-DMS synchron gehalten werden. Dieser Prozess läuft automatisch im Hintergrund – jedoch müssen die korrekten Verbindungsparameter einmalig konfiguriert werden.</p><p>Bevor Sie beginnen, stellen Sie sicher, dass die DealerData-API-Zugangsdaten vorliegen. Diese erhalten Sie vom IT-Verantwortlichen Ihres Hauses oder direkt aus dem GroupIT-Partnerportal.</p>" } },
-      { id: "3-3", type: "steps", payload: { title: "Grundkonfiguration durchführen", steps: [
+      { id: "3-1", type: "video", assetId: null, payload: { title: "DealerData-Synchronisation – Einführung", duration: "6:42" } },
+      { id: "3-2", type: "text", assetId: null, payload: { body: "<p>Die DealerData-Synchronisation stellt sicher, dass alle Fahrzeug- und Kundendaten zwischen dem DSR-System und dem Händler-DMS synchron gehalten werden. Dieser Prozess läuft automatisch im Hintergrund – jedoch müssen die korrekten Verbindungsparameter einmalig konfiguriert werden.</p><p>Bevor Sie beginnen, stellen Sie sicher, dass die DealerData-API-Zugangsdaten vorliegen. Diese erhalten Sie vom IT-Verantwortlichen Ihres Hauses oder direkt aus dem GroupIT-Partnerportal.</p>" } },
+      { id: "3-3", type: "steps", assetId: null, payload: { title: "Grundkonfiguration durchführen", steps: [
         { text: "Öffnen Sie das DSR-Verwaltungsmenü und navigieren Sie zu Einstellungen > Datensynchronisation." },
         { text: "Geben Sie die API-URL und den API-Key ein. Achten Sie auf das korrekte Format (https://api.example.com)." },
         { text: "Klicken Sie auf Verbindung testen. Eine grüne Bestätigung erscheint bei Erfolg." },
         { text: "Legen Sie das Synchronisationsintervall fest (empfohlen: 5 Minuten) und speichern Sie." },
       ]}},
-      { id: "3-4", type: "image", payload: { caption: "DSR – Einstellungsmenü Datensynchronisation mit API-Konfiguration" } },
+      { id: "3-4", type: "image", assetId: null, payload: { caption: "DSR – Einstellungsmenü Datensynchronisation mit API-Konfiguration" } },
     ]},
     { id: "4", title: "Terminverwaltung & Kalender", elements: [
-      { id: "4-1", type: "text", payload: { body: "<p>Inhalt für Kapitel 4: Terminverwaltung & Kalender. In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
+      { id: "4-1", type: "text", assetId: null, payload: { body: "<p>Inhalt für Kapitel 4: Terminverwaltung & Kalender. In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
     ]},
     { id: "5", title: "Zusammenfassung & Checkliste", elements: [
-      { id: "5-1", type: "text", payload: { body: "<p>Inhalt für Kapitel 5: Zusammenfassung & Checkliste. In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
+      { id: "5-1", type: "text", assetId: null, payload: { body: "<p>Inhalt für Kapitel 5: Zusammenfassung & Checkliste. In einer vollständigen Implementierung stehen hier Texte, Videos, Schritt-Anleitungen und Screenshots aus der ServiceQ-Dokumentation.</p>" } },
     ]},
   ],
 };
@@ -72,26 +73,65 @@ function OriginalChip() {
   );
 }
 
-// ─── Video-Element (Prototyp-Player) ─────────────────────────────────────────
+// ─── Medien (R-03) ───────────────────────────────────────────────────────────
+//
+// Dateien liegen in einer privaten Ablage. Es gibt keine dauerhafte Adresse:
+// Jede Wiedergabe holt sich über `/api/media/url` eine kurzlebige signierte
+// Adresse, und die stellt der Server erst aus, nachdem die Datenbank bestätigt
+// hat, dass diese Person dieses Training sehen darf.
+//
+// Deshalb hat jedes Medienelement drei Zustände statt einem: wird geholt,
+// steht bereit, oder es gibt (noch) nichts. Der dritte ist kein Fehler –
+// die Redaktion hat dann schlicht noch keine Datei hinterlegt. Das sagt die
+// Oberfläche auch so, statt einen kaputten Player zu zeigen.
 
-const TICK_MS = 200; // Auflösung der simulierten Wiedergabe
+/** Holt die Abrufadresse für ein Element, sobald es sichtbar wird. */
+function useMediaRef(assetId: string | null) {
+  const [state, setState] = useState<{ status: "idle" | "loading" | "ready" | "missing"; ref: MediaRef | null }>(
+    { status: assetId ? "loading" : "missing", ref: null });
 
-/** "6:42" → 402 Sekunden. Ohne verwertbare Angabe: 120 s als Standardlänge. */
-function parseDurationSeconds(raw: unknown): number {
-  if (typeof raw === "string" && raw.trim()) {
-    const parts = raw.trim().split(":").map(n => Number.parseInt(n, 10));
-    if (parts.length > 0 && parts.every(n => Number.isFinite(n))) {
-      const seconds = parts.reduce((total, n) => total * 60 + n, 0);
-      if (seconds > 0) return seconds;
-    }
-  }
-  return 120;
+  useEffect(() => {
+    if (!assetId) { setState({ status: "missing", ref: null }); return; }
+    let cancelled = false;
+    setState({ status: "loading", ref: null });
+    void fetchMediaUrl(assetId).then(ref => {
+      if (cancelled) return;
+      setState(ref ? { status: "ready", ref } : { status: "missing", ref: null });
+    });
+    return () => { cancelled = true; };
+  }, [assetId]);
+
+  return state;
+}
+
+/** Einheitlicher Hinweis, wenn für ein Element keine Datei vorliegt. */
+function NoMedia({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-dashed border-[#C3C9D1] bg-[#F6F8FA] px-4 py-6 mb-6 text-center">
+      <FileWarning size={20} className="mx-auto text-[#8A93A0] mb-2" aria-hidden />
+      <p className="text-[13px] text-[#5A6472]">{text}</p>
+    </div>
+  );
+}
+
+function MediaLoading({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg bg-[#EEF1F4] px-4 py-6 mb-6 text-center" role="status" aria-live="polite">
+      <p className="text-[13px] text-[#5A6472]">{label}</p>
+    </div>
+  );
 }
 
 /**
- * Rein visueller Player für den Prototyp: Es existiert noch keine echte
- * Videodatei, deshalb simulieren "Abspielen/Pause" und der Fortschrittsbalken
- * die Wiedergabe lokal im Komponentenstate (statt eines toten Buttons).
+ * Echter HTML5-Player.
+ *
+ * `controls` überlässt Bedienung, Tastatursteuerung und Untertitelmenü dem
+ * Browser. Ein selbstgebauter Player müsste all das nachbilden – und wäre für
+ * Screenreader und Tastaturnutzung fast sicher schlechter.
+ *
+ * `preload="metadata"` lädt nur den Kopf der Datei. Bei einem Kapitel mit
+ * mehreren Videos wäre `auto` ein Vielfaches an Datenvolumen für etwas, das
+ * vielleicht nie abgespielt wird.
  */
 function VideoElement({ element, tr }: {
   element: LearningElement;
@@ -99,52 +139,129 @@ function VideoElement({ element, tr }: {
 }) {
   const p = element.payload ?? {};
   const title = tr(element.id, "title", p.title);
-  const totalSeconds = parseDurationSeconds(p.duration);
-  const [playing, setPlaying] = useState(false);
-  const [percent, setPercent] = useState(0);
+  const media = useMediaRef(element.assetId);
 
-  useEffect(() => {
-    if (!playing) return;
-    const step = (TICK_MS / 1000 / totalSeconds) * 100;
-    const id = setInterval(() => setPercent(prev => Math.min(100, prev + step)), TICK_MS);
-    return () => clearInterval(id);
-  }, [playing, totalSeconds]);
+  if (media.status === "loading") return <MediaLoading label="Video wird vorbereitet …" />;
+  if (media.status !== "ready" || !media.ref) {
+    return <NoMedia text="Für dieses Element ist noch kein Video hinterlegt." />;
+  }
 
-  // Ende erreicht: Wiedergabe stoppt, ein weiterer Klick startet von vorn.
-  useEffect(() => {
-    if (percent >= 100) setPlaying(false);
-  }, [percent]);
-
-  const toggle = () => {
-    if (!playing && percent >= 100) setPercent(0);
-    setPlaying(!playing);
-  };
+  const seconds = media.ref.meta.durationSeconds;
+  const duration = seconds
+    ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
+    : null;
 
   return (
-    <div className="bg-[#2E3540] rounded-lg overflow-hidden mb-6 aspect-video flex items-center justify-center relative">
-      <div className="absolute inset-0 bg-gradient-to-br from-[#232830] to-[#3A424E]" />
-      <div className="relative flex flex-col items-center gap-3 px-4 text-center">
-        <button onClick={toggle} aria-pressed={playing}
-          aria-label={playing ? "Video pausieren" : "Video abspielen"}
-          className="w-16 h-16 rounded-full flex items-center justify-center transition-all hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
-          style={{ backgroundColor: "#00C8C1" }}>
-          {playing
-            ? <Pause size={24} fill="#232830" color="#232830" aria-hidden />
-            : <Play size={24} fill="#232830" color="#232830" className="ml-1" aria-hidden />}
-        </button>
-        <span className="text-white/80 text-[14px]">
-          {title.text}{p.duration ? ` (${p.duration})` : ""}
+    <figure className="mb-6">
+      <video
+        className="w-full rounded-lg bg-black aspect-video"
+        controls
+        preload="metadata"
+        controlsList="nodownload"
+        // Die Adresse ist ohnehin kurzlebig; das Herunterladen zu erschweren
+        // ist kein Schutz, verhindert aber das versehentliche Weitergeben
+        // eines Links, der in zwanzig Minuten tot ist.
+        src={media.ref.url}
+        aria-label={title.text || "Schulungsvideo"}
+      >
+        Ihr Browser kann dieses Video nicht wiedergeben.
+      </video>
+      {(title.text || duration) && (
+        <figcaption className="text-[13px] text-[#5A6472] mt-2">
+          {title.text}{duration ? ` · ${duration}` : ""}
           {title.original && <OriginalChip />}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/** Bild aus der Ablage, mit der Bildunterschrift als Alternativtext. */
+function ImageElement({ element, tr }: {
+  element: LearningElement;
+  tr: (refId: string, field: string, master: string | undefined) => { text: string; original: boolean };
+}) {
+  const p = element.payload ?? {};
+  const caption = tr(element.id, "caption", p.caption);
+  const media = useMediaRef(element.assetId);
+
+  if (media.status === "loading") return <MediaLoading label="Bild wird geladen …" />;
+  if (media.status !== "ready" || !media.ref) {
+    return <NoMedia text="Für dieses Element ist noch kein Bild hinterlegt." />;
+  }
+
+  return (
+    <figure className="mb-8">
+      <img
+        src={media.ref.url}
+        // Die Bildunterschrift IST die Beschreibung. Ein leeres alt wäre hier
+        // falsch: Das Bild trägt Inhalt, es ist keine Dekoration.
+        alt={caption.text || "Abbildung zum Schulungsinhalt"}
+        loading="lazy"
+        className="w-full rounded-lg border border-[#C3C9D1] bg-[#EEF1F4]"
+        width={media.ref.meta.width}
+        height={media.ref.meta.height}
+      />
+      {caption.text && (
+        <figcaption className="text-[13px] text-[#5A6472] mt-2 text-center italic">
+          {caption.text}{caption.original && <OriginalChip />}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/** Lesbare Dateigröße. */
+function humanSize(bytes: number | null): string {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Dokument. Der Abruf holt die Adresse erst beim Klick – eine vorab geholte
+ * wäre bis zum Klick womöglich abgelaufen.
+ */
+function DocumentElement({ element, tr }: {
+  element: LearningElement;
+  tr: (refId: string, field: string, master: string | undefined) => { text: string; original: boolean };
+}) {
+  const p = element.payload ?? {};
+  const label = tr(element.id, "label", p.label ?? "Dokument");
+  const [busy, setBusy] = useState(false);
+
+  const open = async () => {
+    if (element.assetId) {
+      setBusy(true);
+      const ref = await fetchMediaUrl(element.assetId);
+      setBusy(false);
+      if (ref) { window.open(ref.url, "_blank", "noopener,noreferrer"); return; }
+      toast.error("Das Dokument ist gerade nicht abrufbar.");
+      return;
+    }
+    // Kein hinterlegtes Dokument: Ein externer Verweis ist weiterhin zulässig,
+    // wird aber gegen die Protokoll-Positivliste geprüft.
+    const external = safeContentUrl(p.url);
+    if (external !== null) { window.open(external, "_blank", "noopener,noreferrer"); return; }
+    toast.info("Für dieses Element ist noch keine Datei hinterlegt.");
+  };
+
+  const size = humanSize(p.sizeBytes ?? null);
+
+  return (
+    <button onClick={open} disabled={busy} aria-label={label.text}
+      className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all text-left disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
+      <div className="w-10 h-10 rounded-lg bg-[#E6FAF9] flex items-center justify-center shrink-0">
+        <Download size={18} style={{ color: "#009D97" }} aria-hidden />
+      </div>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[14px] font-semibold text-[#232830]">
+          {label.text}{label.original && <OriginalChip />}
         </span>
-      </div>
-      <div className="absolute bottom-0 left-0 right-0 px-4 pb-3 pt-6 bg-gradient-to-t from-black/60">
-        <div className="h-1 bg-white/20 rounded-full" role="progressbar"
-          aria-label="Wiedergabefortschritt" aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={Math.round(percent)} aria-valuetext={`${Math.round(percent)}%`}>
-          <div className="h-full bg-[#00C8C1] rounded-full transition-[width] duration-200 ease-linear" style={{ width: `${percent}%` }} />
-        </div>
-      </div>
-    </div>
+        {size && <span className="block text-[12px] text-[#8A93A0]">PDF · {size}</span>}
+      </span>
+      {busy && <span className="text-[12px] text-[#5A6472]">wird geöffnet …</span>}
+    </button>
   );
 }
 
@@ -194,45 +311,10 @@ function ElementView({ element, tr }: {
         </div>
       );
     }
-    case "image": {
-      const caption = tr(element.id, "caption", p.caption);
-      return (
-        <div className="mb-8">
-          <div className="rounded-lg border border-[#C3C9D1] overflow-hidden bg-[#EEF1F4] aspect-[16/7] flex items-center justify-center">
-            <div className="text-center text-[#8A93A0]">
-              <div className="w-12 h-12 bg-[#C3C9D1] rounded-lg mx-auto mb-2 flex items-center justify-center"><Eye size={20} aria-hidden /></div>
-              <p className="text-[13px]">Screenshot</p>
-            </div>
-          </div>
-          {caption.text && (
-            <p className="text-[13px] text-[#5A6472] mt-2 text-center italic">
-              {caption.text}{caption.original && <OriginalChip />}
-            </p>
-          )}
-        </div>
-      );
-    }
-    case "document": {
-      const label = tr(element.id, "label", p.label ?? "Dokument");
-      const url = safeContentUrl(p.url);
-      const openDocument = () => {
-        if (url !== null) {
-          window.open(url, "_blank", "noopener,noreferrer");
-          return;
-        }
-        // Prototyp: Redaktion hat noch keine Datei am Element hinterlegt.
-        toast.info("Für dieses Element ist noch keine Datei hinterlegt.");
-      };
-      return (
-        <button onClick={openDocument} aria-label={label.text}
-          className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
-          <div className="w-10 h-10 rounded-lg bg-[#E6FAF9] flex items-center justify-center shrink-0">
-            <Download size={18} style={{ color: "#009D97" }} aria-hidden />
-          </div>
-          <span className="text-[14px] font-semibold text-[#232830]">{label.text}{label.original && <OriginalChip />}</span>
-        </button>
-      );
-    }
+    case "image":
+      return <ImageElement element={element} tr={tr} />;
+    case "document":
+      return <DocumentElement element={element} tr={tr} />;
     case "link": {
       const label = tr(element.id, "label", p.label ?? p.url);
       const url = safeContentUrl(p.url);

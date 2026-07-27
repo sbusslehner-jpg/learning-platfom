@@ -247,17 +247,29 @@ async function run() {
         assert(keys.length > 0, "kein Fortschritt gespeichert");
       });
 
-      await check("Video-Element: Play/Pause reagiert (war tot)", async () => {
+      // Der simulierte Player ist mit R-03 entfallen. Er tat so, als liefe ein
+      // Video, während gar keine Datei existierte – ein Fortschrittsbalken, der
+      // nichts abbildet, ist schlimmer als gar keiner.
+      //
+      // Ohne hinterlegte Datei – und in der Demo gibt es keine – muss die
+      // Lernansicht das sagen, statt einen toten Player zu zeigen.
+      await check("Video ohne hinterlegte Datei nennt das offen", async () => {
         await routeTo(page, "/lernen");
-        // Kapitel mit Video-Element gezielt über seinen Titel öffnen
         await page.getByRole("button", { name: /DealerData-Synchronisation/i }).first().click();
         await page.waitForTimeout(500);
-        const play = page.getByRole("button", { name: /Video abspielen/i });
-        assert(await play.count() > 0, "kein Video-Element im Kapitel");
-        await play.first().click();
-        await page.waitForTimeout(500);
-        assert(await page.getByRole("button", { name: /Video pausieren/i }).count() > 0,
-          "Play wechselt nicht auf Pause");
+        const text = await page.locator("main").innerText({ timeout: 15_000 });
+        assert(/noch kein Video hinterlegt/i.test(text),
+          "kein Hinweis auf die fehlende Datei");
+        assert(await page.getByRole("button", { name: /Video abspielen/i }).count() === 0,
+          "simulierter Player ist noch vorhanden");
+      });
+
+      await check("Bild ohne hinterlegte Datei nennt das offen", async () => {
+        const text = await page.locator("main").innerText({ timeout: 15_000 });
+        assert(/noch kein Bild hinterlegt/i.test(text), "kein Hinweis auf das fehlende Bild");
+        // Ein Platzhalterbild mit der Aufschrift „Screenshot" behauptete einen
+        // Inhalt, den es nicht gibt.
+        assert(!/^Screenshot$/m.test(text), "Platzhalterbild ist noch vorhanden");
       });
 
       await check("Deep-Link /lernen/<slug> lädt Inhalt", async () => {

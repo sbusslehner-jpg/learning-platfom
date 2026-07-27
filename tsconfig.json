@@ -1,0 +1,38 @@
+{
+  // Bis hierher gab es keine Typprüfung: Vite entfernt Typen beim Bauen,
+  // ohne sie zu prüfen. Ein falscher Typ fiel damit erst zur Laufzeit auf.
+  //
+  // `strict` ist bewusst NICHT gesetzt. Der Bestand nutzt an vielen Stellen
+  // `any` für JSON aus der Datenbank; strict würde hunderte Meldungen
+  // erzeugen, die niemand liest – und eine Prüfung, die niemand liest, ist
+  // keine. Geprüft wird deshalb erst einmal das, was zuverlässig echte Fehler
+  // findet: fehlende Felder, falsche Namen, unpassende Signaturen.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    // `node` wegen tests/legal.test.ts, das unter node:test läuft.
+    "types": ["vite/client", "node"],
+
+    "allowJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "allowImportingTsExtensions": true,
+
+    "strict": false,
+    "strictNullChecks": true,
+    "noImplicitAny": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src", "tests/legal.test.ts"],
+  "exclude": ["node_modules", "dist", "supabase/functions"]
+}

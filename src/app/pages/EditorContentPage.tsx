@@ -6,6 +6,7 @@ import {
   Plus, Send, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { MediaUpload } from "../components/MediaUpload";
 import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
 import { ELEMENTS, type NavHandler } from "../data/demo";
@@ -14,7 +15,7 @@ import {
   fetchAppSettings, fetchEditorTraining, fetchGroups, fetchMarkets, fetchTrainingAssignment,
   fetchTrainingMarketIds, fetchUsers, publishTraining, setTrainingAssignment,
   triggerTranslation, updateChapterTitle, updateElementPayload, updateTrainingMeta,
-  type EditorElement, type EditorTraining, type MarketOption,
+  type EditorAsset, type EditorElement, type EditorTraining, type MarketOption,
 } from "../data/api";
 import { DEMO_MODE } from "../data/runtime";
 
@@ -59,8 +60,18 @@ const inputCls =
   "w-full rounded-lg border border-[#C3C9D1] px-3 py-2 text-[13px] text-[#232830] outline-none focus:border-[#00C8C1] focus:ring-2 focus:ring-[#00C8C1]/20 transition-all";
 const fieldLabelCls = "block text-[11px] font-semibold text-[#5A6472] mb-1";
 
-function ElementEditor({ el, onChange }: { el: EditorElement; onChange: (p: any) => void }) {
+function ElementEditor({ el, onChange, onAssetChanged }: {
+  el: EditorElement;
+  onChange: (p: any) => void;
+  onAssetChanged: (asset: EditorAsset | null) => void;
+}) {
   const p = el.payload ?? {};
+  // Die Dateiauswahl erscheint nur bei Elementtypen, die Dateien tragen –
+  // welche das sind, entscheidet der Server.
+  const media = (
+    <MediaUpload elementId={el.id} elementType={el.type} asset={el.asset} onChanged={onAssetChanged} />
+  );
+
   switch (el.type) {
     case "text":
       return (
@@ -72,6 +83,7 @@ function ElementEditor({ el, onChange }: { el: EditorElement; onChange: (p: any)
         <div className="space-y-2">
           <div><label className={fieldLabelCls}>Titel</label><input className={inputCls} value={p.title ?? ""} onChange={e => onChange({ ...p, title: e.target.value })} /></div>
           <div><label className={fieldLabelCls}>Beschreibung</label><input className={inputCls} value={p.description ?? ""} onChange={e => onChange({ ...p, description: e.target.value })} /></div>
+          {media}
         </div>
       );
     case "steps": {
@@ -96,7 +108,20 @@ function ElementEditor({ el, onChange }: { el: EditorElement; onChange: (p: any)
       );
     }
     case "image":
-      return (<div><label className={fieldLabelCls}>Bildunterschrift</label><input className={inputCls} value={p.caption ?? ""} onChange={e => onChange({ ...p, caption: e.target.value })} /></div>);
+      return (
+        <div className="space-y-2">
+          <div>
+            <label className={fieldLabelCls}>Bildunterschrift</label>
+            <input className={inputCls} value={p.caption ?? ""} onChange={e => onChange({ ...p, caption: e.target.value })} />
+            {/* Die Bildunterschrift dient zugleich als Alternativtext in der
+                Lernansicht. Deshalb der Hinweis: Sie ist nicht nur Zierde. */}
+            <p className="text-[10px] text-[#8A93A0] mt-1">
+              Wird auch als Alternativtext für Screenreader verwendet.
+            </p>
+          </div>
+          {media}
+        </div>
+      );
     case "link":
       return (
         <div className="space-y-2">
@@ -105,15 +130,21 @@ function ElementEditor({ el, onChange }: { el: EditorElement; onChange: (p: any)
         </div>
       );
     case "document":
-      return (<div><label className={fieldLabelCls}>Bezeichnung</label><input className={inputCls} value={p.label ?? ""} onChange={e => onChange({ ...p, label: e.target.value })} /></div>);
+      return (
+        <div className="space-y-2">
+          <div><label className={fieldLabelCls}>Bezeichnung</label><input className={inputCls} value={p.label ?? ""} onChange={e => onChange({ ...p, label: e.target.value })} /></div>
+          {media}
+        </div>
+      );
     default:
       return <div className="text-[12px] text-[#8A93A0]">Kein Editor für diesen Typ.</div>;
   }
 }
 
-function ElementCard({ el, expanded, onToggle, onDelete, onChange }: {
+function ElementCard({ el, expanded, onToggle, onDelete, onChange, onAssetChanged }: {
   el: EditorElement; expanded: boolean;
   onToggle: () => void; onDelete: () => void; onChange: (p: any) => void;
+  onAssetChanged: (asset: EditorAsset | null) => void;
 }) {
   const { Icon, label } = elementView(el);
   return (
@@ -135,7 +166,7 @@ function ElementCard({ el, expanded, onToggle, onDelete, onChange }: {
       </div>
       {expanded && (
         <div className="mt-3 pt-3 border-t border-[#EEF1F4]">
-          <ElementEditor el={el} onChange={onChange} />
+          <ElementEditor el={el} onChange={onChange} onAssetChanged={onAssetChanged} />
         </div>
       )}
     </div>
@@ -253,6 +284,22 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
       if (ok) setSavedAt(new Date());
       else toast.error("Speichern fehlgeschlagen");
     }, 600);
+  };
+
+  /**
+   * Übernimmt das Ergebnis eines Uploads in den Zustand.
+   *
+   * Die Datei hängt am Element, nicht am Payload – deshalb ein eigener Weg
+   * statt `patchElement`. Ein erneutes Laden des ganzen Trainings wäre der
+   * bequemere, aber schlechtere Weg: Es würde ungespeicherte Texteingaben in
+   * anderen Elementen überschreiben.
+   */
+  const setElementAsset = (chapterId: string, elId: string, asset: EditorAsset | null) => {
+    setTraining(t => (t ? {
+      ...t,
+      chapters: t.chapters.map(c => (c.id !== chapterId ? c
+        : { ...c, elements: c.elements.map(e => (e.id === elId ? { ...e, asset } : e)) })),
+    } : t));
   };
 
   const addElement = async (chapterId: string, type: string) => {
@@ -520,7 +567,8 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
                       expanded={expandedEl === el.id}
                       onToggle={() => setExpandedEl(prev => (prev === el.id ? null : el.id))}
                       onDelete={() => removeElement(activeChapter.id, el)}
-                      onChange={p => patchElement(activeChapter.id, el.id, p)} />
+                      onChange={p => patchElement(activeChapter.id, el.id, p)}
+                      onAssetChanged={a => setElementAsset(activeChapter.id, el.id, a)} />
                   ))}
                   {activeChapter.elements.length === 0 && (
                     <div className="text-[13px] text-[#8A93A0] px-1 py-2">Noch keine Elemente in diesem Kapitel.</div>

@@ -27,6 +27,10 @@ const KC_PORT = 8099;
 const APP_PORT = 4322;
 const KC = `http://localhost:${KC_PORT}`;
 const APP = `http://localhost:${APP_PORT}`;
+// Nur für die CSP-Prüfung: Die Herkunft muss in img-src, media-src und
+// connect-src auftauchen, sonst blockiert der Browser Bilder und Videos aus
+// der Medienablage (R-03).
+const SB = "https://beispiel.supabase.co";
 
 let pass = 0, fail = 0;
 const ok = (n) => { pass++; console.log(`  ✅ ${n}`); };
@@ -65,6 +69,7 @@ async function run() {
       VITE_KEYCLOAK_URL: KC,
       VITE_KEYCLOAK_REALM: "serviceq",
       VITE_KEYCLOAK_CLIENT_ID: "learning-platform",
+      VITE_SUPABASE_URL: SB,
     },
   });
 
@@ -83,6 +88,24 @@ async function run() {
     assert(!/connect-src[^;]*\shttps:(\s|;|$)/.test(csp), "connect-src erlaubt pauschal https:");
     assert(!csp.includes("style-src 'self' 'unsafe-inline'"), "style-src erlaubt weiterhin inline-Bloecke");
   });
+  // ── Medien (R-03) ─────────────────────────────────────────────────────────
+  // Ohne `media-src` greift `default-src 'self'`, und der Player bliebe stumm –
+  // ohne erkennbaren Netzwerkfehler, weil die CSP still blockiert.
+  await check("CSP erlaubt Videos und Bilder aus der Medienablage", () => {
+    const h = readFileSync("dist-kc/_headers", "utf8");
+    const csp = h.split("\n").find(l => l.includes("Content-Security-Policy")) ?? "";
+    const directive = (name) => (csp.match(new RegExp(`${name} ([^;]+)`)) ?? [])[1] ?? "";
+    assert(directive("media-src").includes(SB), `media-src ohne Ablage: ${directive("media-src")}`);
+    assert(directive("img-src").includes(SB), `img-src ohne Ablage: ${directive("img-src")}`);
+    assert(directive("img-src").includes("blob:"), "img-src ohne blob: – die Vorschau vor dem Upload bricht");
+  });
+  await check("Medien-Direktiven bleiben eng gefasst", () => {
+    const h = readFileSync("dist-kc/_headers", "utf8");
+    const csp = h.split("\n").find(l => l.includes("Content-Security-Policy")) ?? "";
+    assert(!/media-src[^;]*\shttps:(\s|;|$)/.test(csp), "media-src erlaubt pauschal https:");
+    assert(!/img-src[^;]*\shttps:(\s|;|$)/.test(csp), "img-src erlaubt pauschal https:");
+  });
+
   await check("Frame-Einbettung und Formularziele sind eng gefasst", () => {
     const h = readFileSync("dist-kc/_headers", "utf8");
     assert(h.includes("frame-ancestors 'none'"), "frame-ancestors fehlt");
