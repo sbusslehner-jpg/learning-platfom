@@ -51,10 +51,25 @@ const mock = {
   smtpTestStatus: 204,
   currentRoles: [{ id: "role-id-user", name: "user" }],
   existingUser: { id: NEW_KEYCLOAK_USER_ID, enabled: true, attributes: { tenant: ["PHS_AT"], markets: ["DE"] } },
+  // Missbrauchsschutz (0010): true = erlaubt (Standard), false = Limit erreicht
+  rateLimitAllow: true,
+  auditEvents: [],
 };
 
 function record(entry) {
   mock.calls.push(entry);
+}
+
+/**
+ * Aufrufe ohne die Infrastrukturpfade von Rate-Limit und Audit.
+ * Die Zusicherung "kein ausgehender Aufruf" meint Seiteneffekte auf Keycloak
+ * und Fachdaten - der Zaehler laeuft absichtlich VOR der Validierung, sonst
+ * liesse sich das Limit mit ungueltigen Eingaben aushebeln.
+ */
+function sideEffectCalls() {
+  return mock.calls.filter(
+    (c) => !c.path.startsWith("/rest/v1/rpc/rate_limit_hit") && c.path !== "/rest/v1/audit_event",
+  );
 }
 
 function callsTo(method, pathFragment) {
@@ -216,6 +231,15 @@ const server = http.createServer(async (req, res) => {
     if (method === "PATCH") return sendJson(res, 200, [{ id: APP_USER_ID, active: activeFlag }]);
     if (method === "GET") return sendJson(res, 200, []);
   }
+  // ── Missbrauchsschutz und Audit (0010) ────────────────────────────────────
+  if (path === "/rest/v1/rpc/rate_limit_hit") {
+    return sendJson(res, 200, mock.rateLimitAllow);
+  }
+  if (path === "/rest/v1/audit_event") {
+    (mock.auditEvents ??= []).push(...(Array.isArray(body) ? body : [body]));
+    res.writeHead(201); return res.end();
+  }
+
   if (path === "/rest/v1/user_role_assignment" || path === "/rest/v1/user_market") {
     res.writeHead(201, { "Content-Type": "application/json" });
     return res.end("[]");
@@ -265,6 +289,8 @@ beforeEach(() => {
   mock.smtpServer = { host: "mailpit", port: "1025", from: "noreply@groupit.example", auth: "false" };
   mock.realmUpdateStatus = 204;
   mock.smtpTestStatus = 204;
+  mock.rateLimitAllow = true;
+  mock.auditEvents = [];
   mock.currentRoles = [{ id: "role-id-user", name: "user" }];
   mock.existingUser = { id: NEW_KEYCLOAK_USER_ID, enabled: true, attributes: { tenant: ["PHS_AT"], markets: ["DE"] } };
 });
@@ -706,7 +732,7 @@ describe("POST /api/admin/invite", () => {
         0,
         `${testCase.name}: es darf kein Benutzer angelegt werden`,
       );
-      assert.equal(mock.calls.length, 0, `${testCase.name}: kein ausgehender Aufruf überhaupt`);
+      assert.equal(sideEffectCalls().length, 0, `${testCase.name}: kein ausgehender Aufruf überhaupt`);
     }
   });
 
@@ -802,7 +828,7 @@ describe("POST /api/admin/invite", () => {
     );
     assert.equal(response.statusCode, 405);
     assert.equal(response.headers.Allow, "POST");
-    assert.equal(mock.calls.length, 0);
+    assert.equal(sideEffectCalls().length, 0);
   });
 });
 
@@ -858,7 +884,7 @@ describe("POST /api/admin/invite/resend", () => {
     );
     assert.equal(response.statusCode, 403);
     assert.equal(parse(response).code, "FORBIDDEN");
-    assert.equal(mock.calls.length, 0);
+    assert.equal(sideEffectCalls().length, 0);
   });
 
   test("Resend mit ungültiger E-Mail → 400", async () => {
@@ -871,7 +897,7 @@ describe("POST /api/admin/invite/resend", () => {
       parse(response).details.map((d) => d.field),
       ["email"],
     );
-    assert.equal(mock.calls.length, 0);
+    assert.equal(sideEffectCalls().length, 0);
   });
 
   test("Resend-Route wird auch über rawUrl erkannt", async () => {
@@ -1108,5 +1134,98 @@ describe("Mail-Einstellungen /api/admin/smtp", () => {
     const token = await mintToken({ roles: ["admin"] });
     const response = await smtpHandler(smtpEvent(token, { method: "DELETE" }));
     assert.equal(response.statusCode, 405);
+  });
+});
+
+// ── Missbrauchsschutz und Audit-Trail (R-13, R-10) ───────────────────────────
+// Beide liegen in der Datenbank, nicht im Modulspeicher: Netlify Functions sind
+// zustandslos, ein Zähler in einer warmen Instanz hielte bei verteiltem
+// Missbrauch gerade nicht.
+describe("Rate-Limit und Audit", () => {
+  const inviteEvent = (token, body) => ({
+    httpMethod: "POST",
+    path: "/api/admin/invite",
+    rawUrl: "https://lernen.example.com/api/admin/invite",
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    body: JSON.stringify(body),
+    isBase64Encoded: false,
+  });
+
+  test("erreichtes Limit beantwortet die Einladung mit 429 und legt kein Konto an", async () => {
+    mock.rateLimitAllow = false;
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await inviteHandler(inviteEvent(token, VALID_INVITE));
+    assert.equal(response.statusCode, 429);
+    assert.equal(parse(response).code, "RATE_LIMITED");
+    assert.ok(response.headers["Retry-After"], "Retry-After fehlt");
+    assert.equal(callsTo("POST", `/admin/realms/${realm}/users`).length, 0);
+  });
+
+  test("Limit greift NACH der Rollenprüfung – ein Lernender bekommt weiter 403", async () => {
+    // Sonst verriete der Statuscode, ob ein Endpunkt existiert, bevor die
+    // Berechtigung geprüft wurde.
+    mock.rateLimitAllow = false;
+    const token = await mintToken({ roles: ["user"] });
+    const response = await inviteHandler(inviteEvent(token, VALID_INVITE));
+    assert.equal(response.statusCode, 403);
+  });
+
+  test("Ausfall des Zählers blockiert den Betrieb nicht", async () => {
+    // Der Mock antwortet auf die RPC mit einem Fehler → `allow()` lässt durch.
+    mock.supabaseAppUserStatus = 201;
+    mock.rateLimitAllow = null; // ungültige Antwort
+    const token = await mintToken({ roles: ["admin"] });
+    const response = await inviteHandler(inviteEvent(token, VALID_INVITE));
+    assert.equal(response.statusCode, 201, "Ausfall der Zählung darf nicht sperren");
+  });
+
+  // Audit-Aufrufe sind bewusst "fire and forget" – ein Ereignis aus dem
+  // vorigen Test kann verspaetet eintreffen und im frisch geleerten Array
+  // landen. Deshalb wird jeder Test an einem eigenen Akteur festgemacht.
+  const waitFor = async (predicate) => {
+    for (let i = 0; i < 40; i++) {
+      const hit = mock.auditEvents.find(predicate);
+      if (hit) return hit;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return null;
+  };
+
+  test("erfolgreiche Einladung schreibt ein Audit-Ereignis", async () => {
+    const actor = "chefin-erfolg@example.net";
+    const token = await mintToken({ roles: ["admin"], email: actor });
+    await inviteHandler(inviteEvent(token, VALID_INVITE));
+    const ev = await waitFor((e) => e.action === "user.invited" && e.actor_label === actor);
+    assert.ok(ev, `kein Ereignis: ${JSON.stringify(mock.auditEvents)}`);
+    assert.equal(ev.target_type, "keycloak_user");
+    assert.equal(ev.outcome, "ok");
+    assert.equal(ev.detail.email, VALID_INVITE.email.toLowerCase());
+  });
+
+  test("das Audit-Ereignis enthält keine Geheimnisse", async () => {
+    const actor = "chefin-geheim@example.net";
+    const token = await mintToken({ roles: ["admin"], email: actor });
+    await inviteHandler(inviteEvent(token, VALID_INVITE));
+    await waitFor((e) => e.actor_label === actor);
+    const dump = JSON.stringify(mock.auditEvents);
+    assert.ok(!dump.includes(SUPABASE_JWT_SECRET), "JWT-Secret im Protokoll");
+    assert.ok(!/password/i.test(dump), "Passwortfeld im Protokoll");
+    assert.ok(!dump.includes("eyJ"), "Token im Protokoll");
+  });
+
+  test("zurueckgerollte Einladung wird NICHT als Erfolg protokolliert", async () => {
+    // Ein Protokolleintrag "eingeladen" fuer ein Konto, das wieder geloescht
+    // wurde, waere schlimmer als keiner: Er behauptet einen Zustand, den es
+    // nie gab.
+    const actor = "chefin-fehlschlag@example.net";
+    mock.roleMappingStatus = 500;
+    const token = await mintToken({ roles: ["admin"], email: actor });
+    const response = await inviteHandler(inviteEvent(token, VALID_INVITE));
+    assert.equal(response.statusCode, 500);
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(
+      mock.auditEvents.filter((e) => e.action === "user.invited" && e.actor_label === actor).length,
+      0,
+    );
   });
 });

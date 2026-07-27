@@ -14,6 +14,7 @@ import { SignJWT } from "jose";
 import { json } from "./_lib/http.mjs";
 import { verifyKeycloakToken } from "./_lib/keycloak.mjs";
 import { upsertAppUser } from "./_lib/supabase.mjs";
+import { allow, audit, clientIp, tooManyRequests } from "./_lib/guard.mjs";
 
 /** Lebensdauer des ausgestellten Supabase-Tokens (Sekunden). */
 const SUPABASE_TOKEN_TTL_SECONDS = 15 * 60;
@@ -24,6 +25,16 @@ const TOKEN_ISSUER = "keycloak-exchange";
 export const handler = async (event) => {
   if (String(event?.httpMethod ?? "").toUpperCase() !== "POST") {
     return json(405, { code: "METHOD_NOT_ALLOWED", message: "Nur POST ist erlaubt." }, { Allow: "POST" });
+  }
+
+  // R-13: Der Austausch ist der einzige Einstieg, der ohne vorher geprueftes
+  // Token erreicht wird, und loest je Aufruf eine JWKS- sowie eine
+  // Datenbankoperation aus. 60 Aufrufe je Minute und IP liegen weit ueber dem,
+  // was eine normale Sitzung braucht - der Keycloak-Token lebt fuenf Minuten.
+  const ip = clientIp(event?.headers);
+  if (!(await allow(`exchange:${ip}`, 60, 60))) {
+    console.warn("[auth-exchange] Rate-Limit erreicht.");
+    return tooManyRequests(60);
   }
 
   const jwtSecret = String(process.env.SUPABASE_JWT_SECRET ?? "");
@@ -63,6 +74,16 @@ export const handler = async (event) => {
 
   // In der Plattform deaktivierte Konten dürfen kein Zugriffstoken erhalten.
   if (upsert.active === false) {
+    // R-10: Eine abgewiesene Anmeldung eines gesperrten Kontos ist genau das,
+    // was spaeter jemand nachvollziehen will.
+    void audit({
+      identity: { ...identity, appUserId: upsert.id },
+      action: "login.denied",
+      targetType: "app_user",
+      targetId: upsert.id,
+      outcome: "denied",
+      detail: { reason: "account_disabled" },
+    });
     return json(403, {
       code: "ACCOUNT_DISABLED",
       message: "Dieses Konto ist deaktiviert. Bitte wenden Sie sich an Ihre Administration.",

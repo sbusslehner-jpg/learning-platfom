@@ -34,6 +34,7 @@ import {
   resolveMarketIds,
   upsertAppUser,
 } from "./_lib/supabase.mjs";
+import { allow, audit, tooManyRequests } from "./_lib/guard.mjs";
 
 /** Gültigkeit des Einladungslinks: 3 Tage (Sekunden). */
 const INVITE_LIFESPAN_SECONDS = 259_200;
@@ -321,7 +322,7 @@ async function mirrorToSupabase({ userId, email, firstName, lastName, roles, mar
 }
 
 // ── Route: Einladung erneut senden ───────────────────────────────────────────
-async function handleResend(event) {
+async function handleResend(event, actor) {
   const parsed = parseJsonBody(event);
   if (!parsed.ok) {
     return json(400, {
@@ -371,6 +372,14 @@ async function handleResend(event) {
   }
 
   const emailSent = await sendInvitationEmail(userId, service.token);
+  void audit({
+    identity: actor,
+    action: "user.invite_resent",
+    targetType: "keycloak_user",
+    targetId: userId,
+    outcome: emailSent ? "ok" : "failed",
+    detail: { email: rawEmail },
+  });
   return json(200, {
     userId,
     emailSent,
@@ -381,7 +390,7 @@ async function handleResend(event) {
 }
 
 // ── Route: Benutzer anlegen + einladen ───────────────────────────────────────
-async function handleInvite(event) {
+async function handleInvite(event, actor) {
   const parsed = parseJsonBody(event);
   if (!parsed.ok) {
     return json(400, {
@@ -532,6 +541,14 @@ async function handleInvite(event) {
   ];
   if (mirror.note) messages.push(mirror.note);
 
+  void audit({
+    identity: actor,
+    action: "user.invited",
+    targetType: "keycloak_user",
+    targetId: userId,
+    detail: { email: input.email, roles: input.roles, markets: input.markets, emailSent },
+  });
+
   return json(201, {
     userId,
     emailSent,
@@ -551,7 +568,16 @@ export const handler = async (event) => {
   const auth = await authorizeAdmin(event);
   if (!auth.ok) return auth.response;
 
+  // R-13: Einladungen versenden E-Mails ueber euren Mailserver. Ein
+  // kompromittiertes Adminkonto koennte damit Spam verschicken - und die
+  // Absenderdomain waere danach verbrannt. 20 je Stunde und Konto reichen
+  // fuer jede realistische Aufnahme neuer Mitarbeiter.
+  if (!(await allow(`invite:${auth.identity.sub}`, 20, 3600))) {
+    console.warn("[admin-invite] Rate-Limit erreicht.");
+    return tooManyRequests(3600);
+  }
+
   const path = requestPath(event).replace(/\/+$/, "");
-  if (path.endsWith("/resend")) return handleResend(event);
-  return handleInvite(event);
+  if (path.endsWith("/resend")) return handleResend(event, auth.identity);
+  return handleInvite(event, auth.identity);
 };

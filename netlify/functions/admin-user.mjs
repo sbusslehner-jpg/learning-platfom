@@ -8,6 +8,7 @@ import {
   keycloakAdminFetch,
   verifyKeycloakToken,
 } from "./_lib/keycloak.mjs";
+import { audit } from "./_lib/guard.mjs";
 
 const ID_PATTERN = /^[A-Za-z0-9._~-]{1,128}$/;
 const MARKET_PATTERN = /^[A-Z]{2,3}$/;
@@ -127,6 +128,22 @@ export const handler = async (event) => {
       });
       ok = response.ok;
     }
+
+    // R-10: Rollen-, Markt- und Statusaenderungen sowie Loeschungen sind genau
+    // die Vorgaenge, die spaeter jemand nachvollziehen koennen muss - auch der
+    // Fehlschlag, denn ein abgewiesener Versuch ist ebenfalls ein Ereignis.
+    void audit({
+      identity: auth.identity,
+      action: `user.${operation}`,
+      targetType: "keycloak_user",
+      targetId: userId,
+      outcome: ok ? "ok" : "failed",
+      detail:
+        operation === "roles"   ? { roles: parsed.value.roles }
+        : operation === "markets" ? { markets: parsed.value.markets }
+        : operation === "active"  ? { active: parsed.value.active }
+        : {},
+    });
 
     if (!ok) return json(502, { code: "KEYCLOAK_ERROR", message: "Änderung in Keycloak fehlgeschlagen." });
     return json(200, { message: "Benutzer aktualisiert." });

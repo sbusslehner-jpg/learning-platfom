@@ -27,6 +27,7 @@ import {
   keycloakAdminFetch,
   verifyKeycloakToken,
 } from "./_lib/keycloak.mjs";
+import { allow, audit, tooManyRequests } from "./_lib/guard.mjs";
 
 const MAX_TEXT = 200;
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
@@ -219,7 +220,7 @@ async function handleGet(service) {
 }
 
 // ── Route: speichern ─────────────────────────────────────────────────────────
-async function handlePut(event, service) {
+async function handlePut(event, service, actor) {
   const parsed = parseJsonBody(event);
   if (!parsed.ok) {
     return json(400, {
@@ -272,6 +273,16 @@ async function handlePut(event, service) {
     return json(502, { code: "KEYCLOAK_ERROR", message: "Einstellungen konnten nicht gespeichert werden." });
   }
 
+  void audit({
+    identity: actor,
+    action: "smtp.updated",
+    targetType: "realm",
+    targetId: "serviceq",
+    // Bewusst ohne Passwort und ohne Benutzernamen: Das Protokoll soll
+    // nachvollziehbar machen, WER WANN den Mailweg geaendert hat - nicht die
+    // Zugangsdaten aufbewahren.
+    detail: { host: smtp.host, port: smtp.port, from: smtp.from, auth: smtp.auth },
+  });
   return json(200, { message: "Mail-Einstellungen gespeichert." });
 }
 
@@ -355,11 +366,18 @@ export const handler = async (event) => {
 
   const path = requestPath(event).replace(/\/+$/, "");
   if (method === "POST") {
+    // R-13: Der Testversand schickt echte Nachrichten ueber euren Mailserver.
+    // Zehn Versuche je Stunde reichen zum Einrichten; alles darueber ist kein
+    // Einrichten mehr.
+    if (!(await allow(`smtp-test:${auth.identity.sub}`, 10, 3600))) {
+      console.warn("[admin-smtp] Rate-Limit erreicht.");
+      return tooManyRequests(3600);
+    }
     if (!path.endsWith("/test")) {
       return json(404, { code: "NOT_FOUND", message: "Unbekannte Route." });
     }
     return handleTest(event, service, auth.identity);
   }
-  if (method === "PUT") return handlePut(event, service);
+  if (method === "PUT") return handlePut(event, service, auth.identity);
   return handleGet(service);
 };
