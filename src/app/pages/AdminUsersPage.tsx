@@ -15,6 +15,7 @@ import {
   type AdminMarket, type AdminUser,
 } from "../data/api";
 import { INVITE_AVAILABLE, inviteUser, resendInvite } from "../data/inviteApi";
+import { AdminGroupsPanel } from "./AdminGroupsPanel";
 import { DEMO_MODE } from "../data/runtime";
 
 // ─── Admin: Users ─────────────────────────────────────────────────────────────
@@ -72,6 +73,10 @@ export function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [demo, setDemo] = useState(false);
   const [markets, setMarkets] = useState<AdminMarket[]>([]);
+  // Benutzer und Gruppen gehoeren fachlich zusammen: Eine Gruppe ist eine
+  // Menge von Benutzern. Ein eigener Menuepunkt haette beides getrennt, was
+  // beim Pflegen staendiges Hin- und Herspringen bedeutet.
+  const [tab, setTab] = useState<"users" | "groups">("users");
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | Role>("all");
@@ -245,15 +250,32 @@ export function AdminUsers() {
             {loading ? t("common.loading") : `${users.length} Benutzer · ${activeCount} aktiv`}
           </p>
         </div>
-        <button
-          onClick={() => { setForm(EMPTY_FORM); setErrors({}); setShowPanel(true); }}
-          disabled={demo}
-          title={demo ? t("common.dbRequired") : undefined}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-[14px] transition-all ${FOCUS} ${demo ? "opacity-50 cursor-not-allowed" : ""}`}
-          style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
-          {INVITE_AVAILABLE ? <><MailPlus size={16} /> Benutzer einladen</> : <><Plus size={16} /> Benutzer anlegen</>}
-        </button>
+        {tab === "users" && (
+          <button
+            onClick={() => { setForm(EMPTY_FORM); setErrors({}); setShowPanel(true); }}
+            disabled={demo}
+            title={demo ? t("common.dbRequired") : undefined}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-[14px] transition-all ${FOCUS} ${demo ? "opacity-50 cursor-not-allowed" : ""}`}
+            style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
+            {INVITE_AVAILABLE ? <><MailPlus size={16} /> Benutzer einladen</> : <><Plus size={16} /> Benutzer anlegen</>}
+          </button>
+        )}
       </div>
+
+      {/* Reiter: Benutzer und Gruppen */}
+      <div className="flex items-center gap-1 border-b border-[#E1E5EA] mb-5" role="tablist">
+        {([["users", "Benutzer"], ["groups", "Gruppen"]] as const).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
+            className={`px-3 py-2.5 text-[13px] font-medium border-b-2 -mb-px transition-all ${FOCUS} ${
+              tab === id ? "border-[#00C8C1] text-[#007D78]" : "border-transparent text-[#5A6472] hover:text-[#3A424E]"
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "groups" && <AdminGroupsPanel users={users} readOnly={demo} />}
+      {tab === "users" && (<>
 
       {demo && !loading && (
         <div className="mb-4 rounded-lg bg-[#FDF3E4] text-[#B45309] text-[12px] px-4 py-2 border border-[#F5E3C6]">
@@ -642,6 +664,7 @@ export function AdminUsers() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }

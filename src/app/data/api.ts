@@ -382,6 +382,119 @@ export async function publishTraining(trainingId: string, marketIds: string[]): 
   return !error && data === true;
 }
 
+// ─── Zuweisungen: Gruppen und einzelne Benutzer (R-02) ───────────────────────
+// Ergänzen die Marktzuweisung, sie ersetzen sie nicht: Ein Lernender sieht ein
+// veröffentlichtes Training, sobald EINE der drei Regeln zutrifft (Migration
+// 0009). Eine Zuweisung erteilt eine Berechtigung – sie entzieht keine.
+
+export type UserGroup = { id: string; name: string; description: string | null; memberCount: number };
+export type GroupMember = { userId: string; name: string; email: string | null };
+
+export async function fetchGroups(): Promise<UserGroup[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("user_group")
+    .select("id, name, description, group_member(user_id)")
+    .order("name");
+  if (error || !data) return null;
+  return (data as any[]).map(g => ({
+    id: g.id,
+    name: g.name,
+    description: g.description ?? null,
+    memberCount: (g.group_member ?? []).length,
+  }));
+}
+
+export async function createGroup(name: string, description: string): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("user_group")
+    .insert({ name: name.trim(), description: description.trim() || null })
+    .select("id")
+    .single();
+  return error || !data ? null : (data as any).id;
+}
+
+export async function renameGroup(groupId: string, name: string, description: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from("user_group")
+    .update({ name: name.trim(), description: description.trim() || null })
+    .eq("id", groupId);
+  return !error;
+}
+
+export async function deleteGroup(groupId: string): Promise<boolean> {
+  if (!supabase) return false;
+  // Mitgliedschaften und Zuweisungen hängen per ON DELETE CASCADE daran.
+  const { error } = await supabase.from("user_group").delete().eq("id", groupId);
+  return !error;
+}
+
+export async function fetchGroupMembers(groupId: string): Promise<GroupMember[] | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("group_member")
+    .select("user_id, app_user(name, email)")
+    .eq("group_id", groupId);
+  if (error || !data) return null;
+  return (data as any[]).map(m => ({
+    userId: m.user_id,
+    name: m.app_user?.name ?? "—",
+    email: m.app_user?.email ?? null,
+  }));
+}
+
+/** Setzt die Mitglieder einer Gruppe auf genau diese Liste. */
+export async function setGroupMembers(groupId: string, userIds: string[]): Promise<boolean> {
+  if (!supabase) return false;
+  const wanted = [...new Set(userIds)];
+  const { error: delErr } = await supabase.from("group_member").delete().eq("group_id", groupId);
+  if (delErr) return false;
+  if (wanted.length === 0) return true;
+  const { error } = await supabase
+    .from("group_member")
+    .insert(wanted.map(user_id => ({ group_id: groupId, user_id })));
+  return !error;
+}
+
+export type TrainingAssignment = { groupIds: string[]; userIds: string[] };
+
+export async function fetchTrainingAssignment(trainingId: string): Promise<TrainingAssignment> {
+  if (!supabase) return { groupIds: [], userIds: [] };
+  const [groups, users] = await Promise.all([
+    supabase.from("training_group").select("group_id").eq("training_id", trainingId),
+    supabase.from("training_user").select("user_id").eq("training_id", trainingId),
+  ]);
+  return {
+    groupIds: ((groups.data as any[]) ?? []).map(r => r.group_id),
+    userIds: ((users.data as any[]) ?? []).map(r => r.user_id),
+  };
+}
+
+/** Setzt Gruppen- und Einzelzuweisungen eines Trainings auf genau diese Listen. */
+export async function setTrainingAssignment(
+  trainingId: string,
+  groupIds: string[],
+  userIds: string[],
+): Promise<boolean> {
+  if (!supabase) return false;
+  const g = [...new Set(groupIds)];
+  const u = [...new Set(userIds)];
+
+  const cleared = await Promise.all([
+    supabase.from("training_group").delete().eq("training_id", trainingId),
+    supabase.from("training_user").delete().eq("training_id", trainingId),
+  ]);
+  if (cleared.some(r => r.error)) return false;
+
+  const writes = [];
+  if (g.length) writes.push(supabase.from("training_group").insert(g.map(group_id => ({ training_id: trainingId, group_id }))));
+  if (u.length) writes.push(supabase.from("training_user").insert(u.map(user_id => ({ training_id: trainingId, user_id }))));
+  const results = await Promise.all(writes);
+  return !results.some(r => r.error);
+}
+
 export async function archiveTraining(trainingId: string): Promise<boolean> {
   if (!supabase) return false;
   const { error } = await supabase.from("training")
