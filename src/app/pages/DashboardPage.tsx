@@ -3,6 +3,7 @@ import { ArrowRight, Clock } from "lucide-react";
 import { ProgressRing } from "../components/ProgressRing";
 import type { Screen } from "../data/demo";
 import { fetchDashboardLists, useSupabaseData } from "../data/api";
+import { currentProfile } from "../data/keycloakAuth";
 import { useT } from "../i18n";
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -28,7 +29,18 @@ const STATUS_KEYS: Record<string, string> = {
   abgeschlossen: "learn.status.done",
 };
 
-const LEARNER_NAME = "Max";
+/** Anrede im Demo-Betrieb. Bei echter Anmeldung kommt der Name aus dem Token –
+ *  einen angemeldeten Benutzer mit einem erfundenen Vornamen zu begrüßen, ist
+ *  das Gegenteil von Vertrauen. */
+const DEMO_LEARNER_NAME = "Max";
+
+/** Vorname für die Begrüßung: aus dem Token, sonst der Demo-Platzhalter. */
+function greetingName(): string {
+  const name = currentProfile()?.name?.trim();
+  if (!name) return DEMO_LEARNER_NAME;
+  // Nur den Vornamen – "Willkommen zurück, Sebastian!" statt vollem Namen.
+  return name.split(/\s+/)[0];
+}
 
 export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   const { fresh, mine } = useSupabaseData(fetchDashboardLists, FALLBACK_LISTS);
@@ -44,7 +56,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
 
   return (
     <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-      <h1 className="text-[28px] font-semibold text-[#232830] mb-1">{t("learn.greeting")}, {LEARNER_NAME}!</h1>
+      <h1 className="text-[28px] font-semibold text-[#232830] mb-1">{t("learn.greeting")}, {greetingName()}!</h1>
       <p className="text-[15px] text-[#5A6472] mb-8">{today}</p>
 
       {/* Weiterlernen hero */}
