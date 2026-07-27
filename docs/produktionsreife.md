@@ -7,6 +7,40 @@ Daten im anonymen Zugriff. Dieses Dokument beschreibt, was sich geändert hat.
 
 ---
 
+## 0. Stand der Inbetriebnahme (27.07.2026)
+
+**Die Plattform läuft produktiv.** Nicht mehr „geschrieben und statisch geprüft",
+sondern in Betrieb und gemessen.
+
+| Baustein | Zustand |
+|---|---|
+| Keycloak | Hetzner CX22, Ubuntu 26.04 LTS, Keycloak 26.0 hinter Caddy, gültiges Let's-Encrypt-Zertifikat |
+| Realm `serviceq` | importiert, 13 Client-Scopes, Rollen `admin`/`editor`/`user`, Brute-Force-Schutz und Passwortrichtlinie aktiv |
+| Anmeldung | Authorization Code + PKCE, **PKCE erzwungen**, fremde Redirect-URIs abgewiesen (400) |
+| Plattform | Netlify, `VITE_KEYCLOAK_*` im Bundle, Demo-Anmeldung verschwunden |
+| Token-Austausch | erzeugt eine `app_user`-Zeile – in der Produktivdatenbank nachgewiesen |
+| Datenbank | Migrationen 0001–0006, 35 Policies, **0 Policies für `anon`**, Seed eingespielt (10 Märkte, 6 Trainings) |
+| Betrieb | tägliche Sicherung mit Rotation (03:17, 14 Stände), automatische Sicherheitsupdates, `ufw` auf 22/80/443 |
+| Überwachung | `/health/ready` öffentlich erreichbar, `/metrics` bleibt intern |
+
+**Noch offen:**
+
+- **SMTP.** Der Realm zeigt weiterhin auf `mailpit`. Konten lassen sich anlegen,
+  die Einladungsmail wird aber nicht zugestellt – der Aufruf meldet das ehrlich
+  (`emailSent: false`), und die Einladung ist später erneut versendbar. Bis dahin
+  ist der Benutzeraufnahme-Prozess **nicht abgenommen**.
+- **Übergangsdomain.** Keycloak läuft unter einer `sslip.io`-Adresse. Für den
+  Umzug auf eine echte Domain sind drei Dinge nachzuziehen: `KC_PUBLIC_HOST` in
+  `auth/.env` (Skript erneut ausführen), die Redirect-URIs des Clients in der
+  Keycloak-Konsole und die Netlify-Variablen. Benutzerkonten bleiben erhalten.
+- **Zugangsdaten drehen.** Datenbank-Passwort und Backend-Secret wurden im Zuge
+  der Inbetriebnahme über einen Chatverlauf ausgetauscht und sollten ersetzt
+  werden.
+- Die P1-Punkte aus Abschnitt 5 (Lernfortschritt, Uploads, Übersetzungs-Worker,
+  Impressum) sind unverändert offen.
+
+---
+
 ## 1. Die drei P0-Blocker
 
 | Blocker | Stand |
@@ -54,41 +88,62 @@ Daten im anonymen Zugriff. Dieses Dokument beschreibt, was sich geändert hat.
 schlug fehl (u. a. Adminpflicht der Einladung, `azp`/`aud`-Bindung, Laufzeitdeckel,
 Rollen-Allowlist, kompensierendes Löschen, Deaktivierungs-Sperre).
 
-**Nicht ausgeführt:** Ein vollständiger Anmelde-Rundlauf gegen eine **echte**
-Keycloak-Instanz, echter E-Mail-Versand, RLS-Policies gegen eine echte Postgres-Instanz,
-Last- und Penetrationstest. Grund: Die Entwicklungsumgebung bekommt keine
-Docker-Images, Keycloak und Postgres ließen sich hier nicht starten. Realm-JSON,
-Compose-Datei und SQL sind statisch geprüft.
+**Am 27.07.2026 auf der Produktivinstanz nachgeholt:**
 
-Damit dieser Rest nicht ungeprüft in den Betrieb geht, prüft `hetzner-setup.sh`
-sich nach dem Start **selbst**: Läuft Caddy? Antwortet der Realm? Kann sich der
-Backend-Client mit dem Secret anmelden, das gleich nach Netlify geht? Stimmen DNS
-und Zertifikat? Damit fällt genau das auf dem Server auf, was hier nicht
-nachstellbar war – und zwar beim Setup statt bei der ersten Einladung.
+| Prüfung | Ergebnis |
+|---|---|
+| Realm-Import gegen echtes Keycloak 26.0 | ✅ nach fünf Korrekturen (siehe unten) |
+| Anmelde-Rundlauf im Browser gegen die Live-Seite | ✅ Weiterleitung auf Keycloak, Anmeldeformular im GroupIT-Theme |
+| PKCE erzwungen | ✅ ohne `code_challenge` → `invalid_request` |
+| Fremde Redirect-URI | ✅ 400, abgewiesen |
+| Backend-Client (`client_credentials`) | ✅ Token erhalten |
+| RLS gegen echtes Postgres | ✅ `anon` erhält `permission denied`, 0 Policies für `anon` |
+| Token-Austausch → `app_user` | ✅ Profilzeile in der Produktivdatenbank nachgewiesen |
+| Sicherung im Dauerbetrieb | ✅ Cron-Lauf um 03:17 hat selbstständig gesichert |
+
+**Weiterhin nicht ausgeführt:** echter E-Mail-Versand (SMTP steht noch aus),
+Last- und Penetrationstest.
+
+Dass der Selbsttest in `hetzner-setup.sh` eingebaut wurde, hat sich unmittelbar
+ausgezahlt: Er meldete beim ersten Lauf, dass der Backend-Client sich nicht
+anmelden kann, und beim zweiten den gescheiterten Realm-Import samt Ursache –
+statt beides erst bei der ersten Einladung sichtbar werden zu lassen.
 
 ## 4. Bewertung
 
-**Die Architektur ist produktionsreif; die Inbetriebnahme ist der verbleibende Schritt.**
+**Die Plattform ist in Betrieb.** Alle drei ursprünglichen P0-Blocker sind
+beseitigt, und der Zugriffsschutz liegt nachweislich dort, wo er hingehört: in
+der Datenbank und in serverseitig geprüften Tokens.
 
-Alle drei ursprünglichen P0-Blocker sind konstruktiv beseitigt. Der Zugriffsschutz liegt
-nicht mehr in der Oberfläche, sondern in der Datenbank und in serverseitig geprüften
-Tokens. Was fehlt, ist keine Entwicklungsarbeit mehr, sondern **Betrieb und Abnahme**:
+Schritte 1 bis 3 der ursprünglichen Liste sind erledigt und gemessen. Offen
+bleiben:
 
-1. Keycloak-Stack in Ihrer Umgebung starten und den Realm importieren.
-   Auf einem eigenen Server erledigt das `auth/hetzner-setup.sh` in einem Lauf –
-   inklusive HTTPS, Zufallspasswörtern, täglicher Sicherung und Selbsttest.
-2. `0005_production_rls.sql` einspielen und die Kontrollabfrage ausführen
-   (`0 Zeilen` für `anon`-Policies).
-3. Umgebungsvariablen in Netlify setzen; damit schaltet die Oberfläche in den
-   Keycloak-Modus.
-4. Produktions-SMTP samt SPF/DKIM/DMARC einrichten und einen echten
-   Einladungs-Rundlauf abnehmen.
-5. Restliche Härtung: `start --optimized`, Secrets aus einem Store, ein
+1. **Produktions-SMTP** samt SPF/DKIM/DMARC einrichten und einen echten
+   Einladungs-Rundlauf abnehmen. **Bis dahin ist die Benutzeraufnahme nicht
+   abgenommen** – Konten entstehen, die Einladungsmail wird nicht zugestellt.
+2. **Umzug auf eine echte Domain** (derzeit `sslip.io`): `KC_PUBLIC_HOST`,
+   Redirect-URIs in der Konsole, Netlify-Variablen. Konten bleiben erhalten.
+3. **Zugangsdaten drehen**, die während der Inbetriebnahme ausgetauscht wurden.
+4. Restliche Härtung: `start --optimized`, Secrets aus einem Store, ein
    Sicherungsstand außerhalb des Servers, SSH auf Schlüssel beschränken.
 
 Details: [`keycloak-setup.md`](keycloak-setup.md).
 
-**Beim Vorbereiten der Inbetriebnahme behoben:**
+**Beim ersten echten Lauf gefunden und behoben** – jeder dieser Punkte hätte den
+Import auf jedem Server verhindert. Sie waren nie aufgefallen, weil der Realm
+zuvor nie tatsächlich importiert worden war:
+
+| Fund | Wirkung, wenn er stehen geblieben wäre |
+|---|---|
+| `chmod 600` auf der erzeugten Realm-Datei | Der Container läuft als `uid=1000, gid=0` und konnte nicht lesen – Endlos-Neustart, im Log nur „Failed to run import" ohne Ursache. Jetzt `640`. |
+| `unmanagedAttributePolicy` auf Realm-Ebene | Import bricht ab. Ersatzloses Löschen wäre schlimmer gewesen: Keycloak hätte `markets` und `tenant` stillschweigend verworfen und Lernende hätten keine Schulung gesehen. Jetzt als User-Profile-Komponente mit `ADMIN_EDIT`. |
+| `defaultRoles` (in Keycloak 25 entfernt) | Import bricht ab. Entbehrlich, da Rollen bei der Einladung ausdrücklich zugewiesen werden. |
+| `postLogoutRedirectUris` auf Client-Ebene | Import bricht ab. Die Liste gehört in das Client-Attribut `post.logout.redirect.uris`. |
+| Eigener `clientScopes`-Block im Realm | Unterdrückt Keycloaks eingebaute Client-Scopes: 2 statt 13. Ohne `roles` enthielte das Token keine `realm_access.roles` – jeder Benutzer wäre ohne Berechtigung geblieben. Jetzt hängen die Mapper direkt am Client. |
+| Partieller Unique-Index auf `app_user` | PostgREST sendet `on conflict` ohne WHERE-Bedingung → `42P10`. Jede Anmeldung blieb ohne Profilzeile; die Oberfläche zeigte Demo-Inhalte. Behoben in `0006`. |
+| Anführungszeichen in `seed.sql` | `„…"` statt `„…"` beendete eine JSON-Zeichenkette – der komplette Seed scheiterte. Ohne Märkte hätte jede Einladung „Unbekannte Marktcodes" gemeldet. |
+
+**Zuvor beim Vorbereiten behoben:**
 
 | Fund | Wirkung, wenn er stehen geblieben wäre |
 |---|---|

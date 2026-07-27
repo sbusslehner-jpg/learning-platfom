@@ -16,14 +16,17 @@ die tägliche Datensicherung ein und **prüft am Ende selbst nach**, ob Realm un
 Backend-Client wirklich funktionieren. Danach gibt es die fertige Liste der
 Netlify-Variablen und deine Zugangsdaten aus.
 
-> **Nicht auf einem echten Server durchlaufen.** Der Ablauf ist geschrieben und
-> geprüft: Syntax, die Realm-Erzeugung mit echten Werten, die Sicherung samt
-> Rotation und ein kompletter Durchlauf des Skripts gegen simuliertes Docker
-> (erster Lauf, Wiederholungslauf, absichtlich falsches Secret). Was hier nicht
-> ging: **echte Container starten** – die Entwicklungsumgebung bekommt keine
-> Docker-Images. Der eingebaute Selbsttest ist genau dafür da: Er meldet nach dem
-> Start, ob Realm, Zertifikat und Backend-Client stimmen, statt dich das bei der
-> ersten Einladung herausfinden zu lassen.
+> **Am 27.07.2026 auf einem echten Server durchlaufen** (Hetzner CX22,
+> Ubuntu 26.04 LTS, Keycloak 26.0). Ergebnis des Selbsttests: Caddy läuft,
+> Realm erreichbar, Backend-Client meldet sich an, Zertifikat und DNS in
+> Ordnung. Anschließend im Browser geprüft: Anmeldung springt auf Keycloak,
+> PKCE wird erzwungen, fremde Redirect-URIs werden abgewiesen.
+>
+> Der erste Lauf legte fünf Fehler offen, die den Import verhindert hätten –
+> Dateirechte, drei ungültige Felder in der Realm-Vorlage und ein eigener
+> Client-Scope, der Keycloaks eingebaute Scopes unterdrückte. Alle behoben;
+> die Fassung in diesem Repository ist die, die tatsächlich durchgelaufen ist.
+> Details in [`produktionsreife.md`](produktionsreife.md).
 
 ---
 
