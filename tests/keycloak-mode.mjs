@@ -166,6 +166,16 @@ async function run() {
       assert(!/oidc|token|access|refresh/i.test(keys), keys);
     });
 
+    // R-05: Produktiv wird nur Deutsch angeboten, solange die Kataloge fuer
+    // Englisch und Franzoesisch unvollstaendig sind. Ein Umschalter mit einem
+    // einzigen Eintrag verspricht eine Auswahl, die es nicht gibt.
+    await check("Kein Sprachumschalter in der Produktionsvorgabe", async () => {
+      await page.goto(APP + "/impressum", { waitUntil: "domcontentloaded", timeout: 60_000 });
+      await page.waitForTimeout(1200);
+      const n = await page.locator("header").getByRole("button", { name: /Sprache|Language|Langue/i }).count();
+      assert(n === 0, `Sprachumschalter sichtbar (${n} Treffer), obwohl nur Deutsch angeboten wird`);
+    });
+
     await check("Öffentliche Seiten bleiben ohne Anmeldung erreichbar", async () => {
       for (const p of ["/impressum", "/datenschutz"]) {
         await page.goto(APP + p, { waitUntil: "domcontentloaded", timeout: 60_000 });

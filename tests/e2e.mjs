@@ -75,7 +75,15 @@ async function startServer() {
     // (R-15) – das soll ein versehentliches Deploy verhindern, nicht diesen Test.
     execSync("npx vite build", {
       stdio: "pipe",
-      env: { ...process.env, VITE_DEMO_MODE: "true", ALLOW_DEMO_BUILD: "1" },
+      // Alle Sprachen freischalten: Die Suite prueft die i18n-Mechanik.
+      // Produktiv wird nur Deutsch angeboten (R-05) – das sichert die
+      // Keycloak-Suite ab, die produktionsnah baut.
+      env: {
+        ...process.env,
+        VITE_DEMO_MODE: "true",
+        ALLOW_DEMO_BUILD: "1",
+        VITE_UI_LANGUAGES: "de,en,fr",
+      },
     });
   }
   console.log("Server starten …");

@@ -4,7 +4,7 @@ import logo from "../../imports/GroupIT_Logo.png";
 import { searchTrainings, type SearchHit } from "../data/api";
 import { ROLE_LABELS, ROLES_ARE_AUTHORITATIVE, useRoles, type Role } from "../data/roles";
 import { currentProfile } from "../data/keycloakAuth";
-import { UI_LANGUAGES, useT } from "../i18n";
+import { AVAILABLE_UI_LANGUAGES, UI_LANGUAGE_CHOICE, useT } from "../i18n";
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 // Enthält echte Trainingssuche (Datenbank, debounced), Sprachumschalter,
@@ -111,7 +111,11 @@ export function Topbar({ onMenuToggle, onOpenTraining, onLogout }: {
       </div>
 
       <div className="flex items-center gap-1 ml-auto" ref={boxRef}>
-        {/* Sprache */}
+        {/* Sprache – nur zeigen, wenn es tatsächlich etwas zu wählen gibt.
+            Produktiv wird zurzeit nur Deutsch angeboten (siehe i18n/index.ts):
+            Ein Umschalter mit genau einem Eintrag verspricht eine Auswahl, die
+            es nicht gibt. */}
+        {UI_LANGUAGE_CHOICE && (
         <div className="relative">
           <button onClick={() => setMenu(menu === "lang" ? null : "lang")}
             className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[#5A6472] hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
@@ -121,7 +125,7 @@ export function Topbar({ onMenuToggle, onOpenTraining, onLogout }: {
           </button>
           {menu === "lang" && (
             <div role="menu" className="absolute right-0 top-full mt-1 w-44 bg-white border border-[#C3C9D1] rounded-lg shadow-lg py-1 z-50">
-              {UI_LANGUAGES.map(l => (
+              {AVAILABLE_UI_LANGUAGES.map(l => (
                 <button key={l.code} role="menuitemradio" aria-checked={lang === l.code}
                   onClick={() => { setLang(l.code); setMenu(null); }}
                   className={`w-full text-left px-3 py-2 text-[14px] hover:bg-[#E6FAF9] transition-colors flex items-center justify-between ${lang === l.code ? "text-[#007D78] font-semibold" : "text-[#3A424E]"}`}>
@@ -131,6 +135,7 @@ export function Topbar({ onMenuToggle, onOpenTraining, onLogout }: {
             </div>
           )}
         </div>
+        )}
 
         <button className="p-2 rounded-lg text-[#5A6472] hover:bg-[#EEF1F4] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]"
           aria-label={t("common.help")}

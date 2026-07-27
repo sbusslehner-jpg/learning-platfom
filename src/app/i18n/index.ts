@@ -20,6 +20,36 @@ export const UI_LANGUAGES = [
 export type UiLanguage = (typeof UI_LANGUAGES)[number]["code"];
 const FALLBACK: UiLanguage = "de";
 
+/**
+ * Sprachen, die in der Oberfläche tatsächlich **angeboten** werden.
+ *
+ * Die Kataloge für Englisch und Französisch sind unvollständig: Navigation und
+ * die häufigsten Texte sind übersetzt, große Teile von Redaktion, Verwaltung,
+ * Reporting und Fehlerseiten stehen weiterhin fest auf Deutsch. Eine zur Hälfte
+ * übersetzte Oberfläche ist schlechter als eine ehrlich einsprachige – sie
+ * wirkt unfertig und lässt Nutzer daran zweifeln, ob die Inhalte gepflegt sind.
+ *
+ * Deshalb wird produktiv nur Deutsch angeboten. Sobald die Kataloge vollständig
+ * sind, schaltet `VITE_UI_LANGUAGES="de,en,fr"` die übrigen frei – die
+ * Wörterbücher bleiben dafür erhalten und werden weiter verwendet, wo sie
+ * vorhanden sind.
+ *
+ * **Nicht betroffen:** die Sprache der Schulungsinhalte. Die kommt aus der
+ * Übersetzungstabelle und hat in der Lernansicht einen eigenen Wähler
+ * (`LEARN_LANGUAGES`). Das ist die Kernfunktion der Plattform und bleibt
+ * vollständig mehrsprachig.
+ */
+export const AVAILABLE_UI_LANGUAGES = (() => {
+  const configured = (import.meta.env.VITE_UI_LANGUAGES as string | undefined)?.trim();
+  if (!configured) return UI_LANGUAGES.filter((l) => l.code === FALLBACK);
+  const wanted = configured.split(",").map((c) => c.trim().toLowerCase());
+  const list = UI_LANGUAGES.filter((l) => wanted.includes(l.code));
+  return list.length > 0 ? list : UI_LANGUAGES.filter((l) => l.code === FALLBACK);
+})();
+
+/** true, solange nur eine Sprache angeboten wird – dann entfällt der Umschalter. */
+export const UI_LANGUAGE_CHOICE = AVAILABLE_UI_LANGUAGES.length > 1;
+
 type Dict = Record<string, string>;
 
 const de: Dict = {
@@ -284,10 +314,13 @@ const DICTS: Record<UiLanguage, Dict> = { de, en, fr };
 export function resolveUiLanguage(locale: string | undefined | null): UiLanguage {
   if (!locale) return FALLBACK;
   const lower = locale.toLowerCase();
-  const exact = UI_LANGUAGES.find((l) => l.code === lower);
+  // Nur angebotene Sprachen: Sonst bekäme ein Browser mit englischer
+  // Spracheinstellung eine halb übersetzte Oberfläche, obwohl die Umschaltung
+  // gar nicht angeboten wird – und niemand könnte zurückwechseln.
+  const exact = AVAILABLE_UI_LANGUAGES.find((l) => l.code === lower);
   if (exact) return exact.code;
   const base = lower.split("-")[0];
-  const baseMatch = UI_LANGUAGES.find((l) => l.code === base);
+  const baseMatch = AVAILABLE_UI_LANGUAGES.find((l) => l.code === base);
   return baseMatch ? baseMatch.code : FALLBACK;
 }
 
