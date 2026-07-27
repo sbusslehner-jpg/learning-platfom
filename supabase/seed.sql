@@ -108,7 +108,7 @@ insert into content_element (id, chapter_id, type, sort, payload) values
   ('f0000000-0000-4000-8000-000000000003', 'e0000000-0000-4000-8000-000000000001', 'steps', 3,
    '{"title": "DealerData-Einstellungen", "steps": [
       {"text": "DealerData öffnen und den Betrieb auswählen."},
-      {"text": "Reiter „Serviceannahme" wählen und die Konfigurationsebene prüfen."},
+      {"text": "Reiter „Serviceannahme“ wählen und die Konfigurationsebene prüfen."},
       {"text": "Abweichende Einstellungen für den Einzelhandel erfassen."},
       {"text": "Änderungen speichern und im Vorschaumodus kontrollieren."}
     ]}'),
