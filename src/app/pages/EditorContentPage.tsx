@@ -11,7 +11,8 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ELEMENTS, type NavHandler } from "../data/demo";
 import {
   archiveTraining, createChapter, createElement, deleteChapter, deleteElement,
-  fetchAppSettings, fetchEditorTraining, fetchMarkets, fetchTrainingMarketIds, publishTraining,
+  fetchAppSettings, fetchEditorTraining, fetchGroups, fetchMarkets, fetchTrainingAssignment,
+  fetchTrainingMarketIds, fetchUsers, publishTraining, setTrainingAssignment,
   triggerTranslation, updateChapterTitle, updateElementPayload, updateTrainingMeta,
   type EditorElement, type EditorTraining, type MarketOption,
 } from "../data/api";
@@ -158,6 +159,14 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
   const [showPublish, setShowPublish] = useState(false);
   const [markets, setMarkets] = useState<MarketOption[] | null>(null);
   const [selectedMarketIds, setSelectedMarketIds] = useState<string[]>([]);
+  // Zuweisung an Gruppen und einzelne Personen (R-02). Ergänzt die Märkte,
+  // ersetzt sie nicht: Sichtbar wird ein Training, sobald EINE der Regeln
+  // greift. Ein Training ohne jede Zuweisung sähe niemand – deshalb bleibt
+  // mindestens ein Markt Pflicht.
+  const [groups, setGroups] = useState<{ id: string; name: string; memberCount: number }[] | null>(null);
+  const [people, setPeople] = useState<{ id: string; name: string; email: string | null }[] | null>(null);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [publishing, setPublishing] = useState(false);
 
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -289,9 +298,20 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
       const m = await fetchMarkets();
       if (m) setMarkets(m);
     }
+    if (!groups) {
+      const g = await fetchGroups();
+      if (g) setGroups(g.map(x => ({ id: x.id, name: x.name, memberCount: x.memberCount })));
+    }
+    if (!people) {
+      const u = await fetchUsers();
+      if (u) setPeople(u.map(x => ({ id: x.id, name: x.name, email: x.email })));
+    }
     if (trainingId) {
       const ids = await fetchTrainingMarketIds(trainingId);
       if (ids.length) setSelectedMarketIds(ids);
+      const a = await fetchTrainingAssignment(trainingId);
+      setSelectedGroupIds(a.groupIds);
+      setSelectedUserIds(a.userIds);
     }
   };
 
@@ -307,8 +327,15 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
     }
     setPublishing(true);
     const ok = await publishTraining(trainingId, selectedMarketIds);
+    if (!ok) { setPublishing(false); toast.error("Veröffentlichen fehlgeschlagen"); return; }
+    // Zuweisungen nach der Veröffentlichung schreiben. Schlagen sie fehl, ist
+    // das Training trotzdem veröffentlicht – das wird auch so gemeldet, statt
+    // einen Teilerfolg als Fehlschlag auszugeben.
+    const assigned = await setTrainingAssignment(trainingId, selectedGroupIds, selectedUserIds);
     setPublishing(false);
-    if (!ok) { toast.error("Veröffentlichen fehlgeschlagen"); return; }
+    if (!assigned) {
+      toast.warning("Veröffentlicht, aber Gruppen-/Personenzuweisung konnte nicht gespeichert werden.");
+    }
     toast.success("Veröffentlicht");
     setTraining(t => (t ? { ...t, status: "published" } : t));
     setSavedAt(new Date());
@@ -555,6 +582,60 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
                   </div>
                 ) : (
                   <p className="text-[12px] text-[#8A93A0]">Keine Märkte hinterlegt.</p>
+                )}
+                <p className="text-[11px] text-[#8A93A0] mt-1.5">
+                  Mindestens ein Markt ist erforderlich – ohne Zuweisung sähe das
+                  Training niemand.
+                </p>
+              </div>
+
+              {/* Zusätzliche Zuweisung: Gruppen und einzelne Personen (R-02).
+                  Ergänzt die Märkte, schränkt sie nicht ein. */}
+              <div>
+                <label className="block text-[13px] font-semibold text-[#3A424E] mb-2">
+                  Zusätzlich für Gruppen freigeben <span className="font-normal text-[#8A93A0]">(optional)</span>
+                </label>
+                {groups && groups.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {groups.map(g => (
+                      <button key={g.id} title={`${g.memberCount} Mitglied(er)`}
+                        onClick={() => setSelectedGroupIds(s => (s.includes(g.id) ? s.filter(x => x !== g.id) : [...s, g.id]))}
+                        className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all ${selectedGroupIds.includes(g.id) ? "bg-[#E6FAF9] border-[#00C8C1] text-[#007D78]" : "bg-white border-[#C3C9D1] text-[#5A6472] hover:border-[#8A93A0]"}`}>
+                        {g.name} · {g.memberCount}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-[#8A93A0]">
+                    Keine Gruppen angelegt – Verwaltung → Benutzer → Gruppen.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[13px] font-semibold text-[#3A424E] mb-2">
+                  Zusätzlich für einzelne Personen <span className="font-normal text-[#8A93A0]">(optional)</span>
+                </label>
+                {people && people.length > 0 ? (
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-[#E1E5EA] divide-y divide-[#EEF1F4]">
+                    {people.map(u => (
+                      <label key={u.id} className="flex items-center gap-2.5 px-3 py-2 text-[13px] cursor-pointer hover:bg-[#F6F8FA]">
+                        <input type="checkbox" className="accent-[#00C8C1]"
+                          checked={selectedUserIds.includes(u.id)}
+                          onChange={() => setSelectedUserIds(s => (s.includes(u.id) ? s.filter(x => x !== u.id) : [...s, u.id]))} />
+                        <span className="flex-1 min-w-0 truncate text-[#232830]">{u.name}</span>
+                        <span className="text-[11px] text-[#8A93A0] truncate">{u.email ?? ""}</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-[#8A93A0]">Keine Benutzer vorhanden.</p>
+                )}
+                {(selectedGroupIds.length > 0 || selectedUserIds.length > 0) && (
+                  <p className="text-[11px] text-[#5A6472] mt-1.5">
+                    Zusätzlich sichtbar für {selectedGroupIds.length} Gruppe(n) und
+                    {" "}{selectedUserIds.length} Person(en) – unabhängig von deren Märkten.
+                  </p>
                 )}
               </div>
 
