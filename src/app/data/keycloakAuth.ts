@@ -191,19 +191,77 @@ let supabaseTokenExpiresAt: number | null = null;
  *     const t = getSupabaseToken?.();
  *     if (t) headers.set("Authorization", `Bearer ${t}`);
  *
- * Diese Datei bleibt hier absichtlich unberührt – die Datenschicht wird von
- * einem anderen Paket verantwortet. Der Austausch selbst findet statt und das
- * Token ist über diesen Getter abholbar; `applySupabaseSession()` versucht
- * zusätzlich den direkten Weg über `supabase.auth.setSession()`.
+ * Inzwischen ist genau das umgesetzt: `src/lib/supabase.ts` holt das Token bei
+ * jeder Anfrage ab – allerdings über `getFreshSupabaseToken()`, das bei Bedarf
+ * ein neues beschafft. Dieser synchrone Getter bleibt für Aufrufer, die nicht
+ * warten können; `applySupabaseSession()` versucht zusätzlich den direkten Weg
+ * über `supabase.auth.setSession()`.
  */
 export function getSupabaseToken(): string | null {
   if (supabaseTokenExpiresAt && Date.now() >= supabaseTokenExpiresAt) return null;
   return supabaseToken;
 }
 
-// Die Datenschicht holt das ausgetauschte Token bei jeder Anfrage hier ab.
-// Damit sieht RLS (Migration 0005) die echte Identität statt des anon-Keys.
-registerSupabaseTokenSource(getSupabaseToken);
+/**
+ * Sicherheitsabstand vor dem Ablauf. Ohne ihn kann ein Token zwischen Prüfung
+ * und Ankunft beim Server verfallen – die Anfrage liefe dann als `anon`.
+ */
+const TOKEN_SKEW_MS = 30_000;
+
+/** Läuft gerade ein Austausch? Verhindert, dass zehn parallele Abfragen
+ *  zehn Austausche auslösen. Alle warten auf denselben Vorgang. */
+let exchangeInFlight: Promise<void> | null = null;
+
+function tokenIsFresh(): boolean {
+  if (!supabaseToken) return false;
+  if (!supabaseTokenExpiresAt) return true;
+  return Date.now() < supabaseTokenExpiresAt - TOKEN_SKEW_MS;
+}
+
+/**
+ * Liefert ein **gültiges** Supabase-Token und beschafft bei Bedarf ein neues.
+ *
+ * Das ist der Unterschied zu `getSupabaseToken()`: Der synchrone Getter meldet
+ * bei fehlendem oder abgelaufenem Token schlicht `null`. Die Datenschicht
+ * schickte die Anfrage dann ohne Kopfzeile los – und damit als `anon`, dem
+ * Migration 0005 jeden Zugriff entzogen hat. Ergebnis war kein Fehler, sondern
+ * ein leeres Ergebnis, das die Oberfläche als „keine Datenbank" deutet und mit
+ * Demo-Inhalten beantwortet.
+ *
+ * Zwei Fälle deckt diese Fassung ab:
+ *  - **Wettlauf beim Seitenaufbau:** Der Austausch läuft noch, die erste
+ *    Abfrage ist schneller. Hier wird auf den laufenden Austausch gewartet.
+ *  - **Ablauf:** Der Keycloak-Token lebt fünf Minuten, das Supabase-Token ist
+ *    darauf gedeckelt. `getAccessToken()` erneuert die Keycloak-Sitzung bei
+ *    Bedarf still; anschließend wird frisch getauscht.
+ */
+export async function getFreshSupabaseToken(): Promise<string | null> {
+  if (!KEYCLOAK_MODE) return null;
+  if (tokenIsFresh()) return supabaseToken;
+
+  if (!exchangeInFlight) {
+    exchangeInFlight = (async () => {
+      // `getAccessToken()` erneuert die Keycloak-Sitzung, falls nötig.
+      const keycloakToken = await getAccessToken();
+      if (keycloakToken) {
+        lastExchangedToken = keycloakToken;
+        await exchangeForSupabase(keycloakToken);
+      }
+    })().finally(() => { exchangeInFlight = null; });
+  }
+
+  try {
+    await exchangeInFlight;
+  } catch {
+    return null;
+  }
+  return tokenIsFresh() ? supabaseToken : null;
+}
+
+// Die Datenschicht holt das Token bei jeder Anfrage hier ab und wartet, falls
+// gerade keines gültig ist. Damit sieht RLS (Migration 0005) die echte
+// Identität statt des anon-Keys.
+registerSupabaseTokenSource(getFreshSupabaseToken);
 
 /**
  * Legt das ausgetauschte Token auf den Supabase-Client.

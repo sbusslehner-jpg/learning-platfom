@@ -20,20 +20,33 @@ const REQUEST_TIMEOUT_MS = 10_000;
  * `keycloakAuth` benötigt den Supabase-Client, und der Client benötigt hier
  * umgekehrt das Token. Beim ersten Aufruf ist das Modul bereits initialisiert.
  */
-let tokenGetter: (() => string | null) | null = null;
+// Der Getter ist bewusst asynchron: Beim Seitenaufbau läuft der Tokenaustausch
+// noch, während die ersten Abfragen bereits hinausgehen. Ein synchroner Getter
+// hätte hier `null` gemeldet, die Anfrage wäre als `anon` gelaufen – und dem
+// hat Migration 0005 jeden Zugriff entzogen. Das Ergebnis war kein Fehler,
+// sondern eine leere Antwort, die die Oberfläche als „keine Datenbank" deutet
+// und mit Demo-Inhalten beantwortet. Deshalb wird hier gewartet.
+let tokenGetter: (() => Promise<string | null>) | null = null;
 
-export function registerSupabaseTokenSource(getter: () => string | null) {
+export function registerSupabaseTokenSource(getter: () => Promise<string | null>) {
   tokenGetter = getter;
 }
 
-function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers ?? {});
 
   // Im Keycloak-Modus ersetzt das ausgetauschte Token den anon-Key, damit die
   // RLS-Policies (0005) die echte Identität sehen: `auth.uid()` zeigt auf
   // app_user.id, die Rollen und Märkte stehen als Claims im Token.
   // Der `apikey`-Kopf bleibt der anon-Key – so verlangt es die Supabase-API.
-  const exchanged = tokenGetter?.();
+  let exchanged: string | null = null;
+  try {
+    exchanged = (await tokenGetter?.()) ?? null;
+  } catch {
+    // Kein Token beschaffbar: Die Anfrage läuft als `anon` und wird von RLS
+    // abgewiesen. Das ist die ehrlichere Variante, als sie zu unterdrücken.
+    exchanged = null;
+  }
   if (exchanged) headers.set("Authorization", `Bearer ${exchanged}`);
 
   // Ein bereits vorhandenes Abbruchsignal (z. B. von Supabase selbst) bleibt wirksam.
