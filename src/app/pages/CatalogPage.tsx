@@ -4,6 +4,7 @@ import { ProgressBar } from "../components/ProgressBar";
 import type { Screen } from "../data/demo";
 import { fetchCatalogModules, useSupabaseData } from "../data/api";
 import { useT } from "../i18n";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ const FALLBACK_MODULES = [
 ];
 
 export function Catalog({ onNavigate }: { onNavigate: (s: Screen) => void }) {
-  const modules = useSupabaseData(fetchCatalogModules, FALLBACK_MODULES);
+  const modules = useSupabaseData(fetchCatalogModules, FALLBACK_MODULES, [], DEMO_MODE);
   const { t } = useT();
   return (
     <div className="flex-1 overflow-y-auto p-6 lg:p-8">

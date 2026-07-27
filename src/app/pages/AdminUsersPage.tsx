@@ -15,6 +15,7 @@ import {
   type AdminMarket, type AdminUser,
 } from "../data/api";
 import { INVITE_AVAILABLE, inviteUser, resendInvite } from "../data/inviteApi";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Admin: Users ─────────────────────────────────────────────────────────────
 // Echte Verwaltung über Supabase (app_user, user_role_assignment, user_market).
@@ -47,6 +48,7 @@ const DEMO_USERS: AdminUser[] = USERS.map((u, i) => ({
   marketIds: [],
   active: true,
   lastActive: u.lastActive,
+  externalId: null,
 }));
 
 const initials = (name: string) =>
@@ -95,8 +97,8 @@ export function AdminUsers() {
       setUsers(rows);
       setDemo(false);
     } else {
-      setUsers(DEMO_USERS);
-      setDemo(true);
+      setUsers(DEMO_MODE ? DEMO_USERS : []);
+      setDemo(DEMO_MODE);
     }
     setLoading(false);
   }, []);
@@ -130,7 +132,7 @@ export function AdminUsers() {
 
   const toggleActive = async (u: AdminUser) => {
     setBusyId(u.id);
-    const ok = await setUserActive(u.id, !u.active);
+    const ok = await setUserActive(u.id, !u.active, u.externalId);
     setBusyId(null);
     if (!ok) { toast.error(t("common.dbRequired")); return; }
     toast.success(u.active ? "Benutzer deaktiviert" : "Benutzer aktiviert");
@@ -140,7 +142,8 @@ export function AdminUsers() {
   const saveRoles = async (userId: string) => {
     if (!roleDraft.length) { toast.error("Mindestens eine Rolle auswählen"); return; }
     setBusyId(userId);
-    const ok = await setUserRoles(userId, roleDraft);
+    const user = users.find(u => u.id === userId);
+    const ok = await setUserRoles(userId, roleDraft, user?.externalId);
     setBusyId(null);
     if (!ok) { toast.error(t("common.dbRequired")); return; }
     toast.success("Rollen gespeichert");
@@ -150,7 +153,9 @@ export function AdminUsers() {
 
   const saveMarkets = async (userId: string) => {
     setBusyId(userId);
-    const ok = await setUserMarkets(userId, marketDraft);
+    const user = users.find(u => u.id === userId);
+    const marketCodes = markets.filter(m => marketDraft.includes(m.id)).map(m => m.code);
+    const ok = await setUserMarkets(userId, marketDraft, marketCodes, user?.externalId);
     setBusyId(null);
     if (!ok) { toast.error(t("common.dbRequired")); return; }
     toast.success("Märkte gespeichert");
@@ -160,7 +165,8 @@ export function AdminUsers() {
 
   const removeUser = async (userId: string) => {
     setBusyId(userId);
-    const ok = await deleteUser(userId);
+    const user = users.find(u => u.id === userId);
+    const ok = await deleteUser(userId, user?.externalId);
     setBusyId(null);
     setConfirmId(null);
     if (!ok) { toast.error(t("common.dbRequired")); return; }

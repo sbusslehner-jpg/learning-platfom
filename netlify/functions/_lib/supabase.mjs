@@ -6,8 +6,9 @@
 // benutzergesteuerte Filter oder Spaltenlisten übernehmen. Alle Werte
 // werden über die Query-API kodiert, es wird kein SQL zusammengesetzt.
 //
-// Alle Funktionen hier sind "best effort": Provisionierungsfehler dürfen
-// eine Anmeldung oder Einladung nicht scheitern lassen (siehe auth/README.md).
+// Aufrufer entscheiden bewusst über die Fehlersemantik: Der Token-Exchange
+// arbeitet fail-closed, während Einladungen einen Spiegelungsfehler als
+// sichtbaren Teilfehler zurückgeben können.
 // ============================================================
 
 const OUTBOUND_TIMEOUT_MS = 10_000;

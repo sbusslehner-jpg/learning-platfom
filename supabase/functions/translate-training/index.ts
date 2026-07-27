@@ -16,7 +16,24 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-const MISTRAL_MODEL = "mistral-small-latest";
+const DEFAULT_MISTRAL_MODEL = "mistral-small-latest";
+const ALLOWED_MISTRAL_MODELS = new Set([
+  "mistral-large-latest", "mistral-medium-latest", "mistral-small-latest",
+]);
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LANGUAGE_PATTERN = /^[a-z]{2,3}(?:-[A-Z]{2})?$/;
+
+function response(status: number, payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json; charset=utf-8" },
+  });
+}
 
 // Glossar: Fachbegriffe, die nie übersetzt werden (Konzept §5)
 const GLOSSARY = [
@@ -68,20 +85,26 @@ function collectFields(training: any, chapters: any[]): Field[] {
   return fields;
 }
 
-async function translate(text: string, targetLang: string, apiKey: string): Promise<string> {
+async function translate(
+  text: string,
+  targetLang: string,
+  apiKey: string,
+  model: string,
+  glossaryEnabled: boolean,
+): Promise<string> {
   const target = LANGUAGE_NAMES[targetLang] ?? targetLang;
   const res = await fetch(MISTRAL_URL, {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: MISTRAL_MODEL,
+      model,
       temperature: 0.2,
       messages: [
         {
           role: "system",
           content:
             `You translate training content for automotive after-sales service staff from German to ${target}. ` +
-            `Rules: keep these terms untranslated: ${GLOSSARY.join(", ")}. ` +
+            (glossaryEnabled ? `Rules: keep these terms untranslated: ${GLOSSARY.join(", ")}. ` : "Rules: ") +
             `Preserve any HTML tags exactly. Use formal address (Sie-Form equivalent). ` +
             `Factual, concise tone. Reply with ONLY the translation, no explanations.`,
         },
@@ -100,27 +123,80 @@ async function translate(text: string, targetLang: string, apiKey: string): Prom
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "POST erwartet" }), { status: 405 });
+    return response(405, { error: "POST erwartet" });
   }
 
-  // Optionaler Zusatzschutz: ADMIN_TOKEN-Secret setzen → Header muss übereinstimmen
-  const adminToken = Deno.env.get("ADMIN_TOKEN");
-  if (adminToken && req.headers.get("x-admin-token") !== adminToken) {
-    return new Response(JSON.stringify({ error: "x-admin-token fehlt oder falsch" }), { status: 401 });
+  // Die Funktion arbeitet später mit service_role und muss deshalb die Rolle
+  // des Aufrufers VORHER mit dessen JWT gegen PostgREST/RLS prüfen.
+  const authorization = req.headers.get("Authorization") ?? "";
+  if (!/^Bearer\s+\S+$/.test(authorization)) {
+    return response(401, { error: "Anmeldung erforderlich" });
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+    return response(500, { error: "Supabase-Secrets sind unvollständig" });
+  }
+  const callerClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authorization } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: isEditor, error: roleError } = await callerClient.rpc("auth_is_editor");
+  if (roleError || isEditor !== true) {
+    return response(403, { error: "Editor-Berechtigung erforderlich" });
   }
 
   const mistralKey = Deno.env.get("MISTRAL_API_KEY");
   if (!mistralKey) {
-    return new Response(JSON.stringify({ error: "Secret MISTRAL_API_KEY ist nicht gesetzt" }), { status: 500 });
+    return response(500, { error: "Secret MISTRAL_API_KEY ist nicht gesetzt" });
   }
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  const { data: settingRows } = await supabase
+    .from("app_setting")
+    .select("key, value")
+    .in("key", ["translation.model", "translation.glossary_enabled"]);
+  const settings = new Map((settingRows ?? []).map((row: any) => [row.key, row.value]));
+  const configuredModel = settings.get("translation.model");
+  const model = typeof configuredModel === "string" && ALLOWED_MISTRAL_MODELS.has(configuredModel)
+    ? configuredModel
+    : DEFAULT_MISTRAL_MODEL;
+  const glossaryEnabled = settings.get("translation.glossary_enabled") !== false;
 
   const body = await req.json().catch(() => ({}));
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return response(400, { error: "JSON-Objekt erwartet" });
+  }
+  if (body.training_id !== undefined && (
+    typeof body.training_id !== "string" || !UUID_PATTERN.test(body.training_id)
+  )) {
+    return response(400, { error: "training_id ist ungültig" });
+  }
+  if (body.training_slug !== undefined && (
+    typeof body.training_slug !== "string" || body.training_slug.length > 120
+  )) {
+    return response(400, { error: "training_slug ist ungültig" });
+  }
+  if (!body.training_id && !body.training_slug) {
+    return response(400, { error: "training_id oder training_slug ist erforderlich" });
+  }
+  const requestedLanguages = body.languages === undefined
+    ? null
+    : Array.isArray(body.languages)
+      ? [...new Set(body.languages)]
+      : [];
+  if (
+    requestedLanguages !== null &&
+    (requestedLanguages.length === 0 || requestedLanguages.length > 30 ||
+      requestedLanguages.some((l) => typeof l !== "string" || !LANGUAGE_PATTERN.test(l)))
+  ) {
+    return response(400, { error: "languages ist ungültig" });
+  }
 
   // Training laden (per Slug oder ID)
   let query = supabase
@@ -129,23 +205,24 @@ Deno.serve(async (req) => {
   query = body.training_id ? query.eq("id", body.training_id) : query.eq("slug", body.training_slug ?? "");
   const { data: training, error: tErr } = await query.single();
   if (tErr || !training) {
-    return new Response(JSON.stringify({ error: `Training nicht gefunden: ${tErr?.message}` }), { status: 404 });
+    return response(404, { error: "Training nicht gefunden" });
   }
 
-  // Zielsprachen: Parameter oder aus den zugeordneten Märkten (Konzept §5)
-  let languages: string[] = Array.isArray(body.languages) ? body.languages : [];
-  if (!languages.length) {
-    const { data: langs } = await supabase
-      .from("training_market")
-      .select("market:market_id(market_language(language_code))")
-      .eq("training_id", training.id);
-    languages = [...new Set(
-      (langs ?? []).flatMap((r: any) => r.market?.market_language ?? []).map((l: any) => l.language_code),
-    )];
+  // Zielsprachen stammen verbindlich aus den zugeordneten Märkten. Ein Client
+  // darf nur eine Teilmenge anfordern, nie beliebige Sprachen und Kosten.
+  const { data: langs } = await supabase
+    .from("training_market")
+    .select("market:market_id(market_language(language_code))")
+    .eq("training_id", training.id);
+  const assignedLanguages = [...new Set(
+    (langs ?? []).flatMap((r: any) => r.market?.market_language ?? []).map((l: any) => l.language_code),
+  )].filter((l): l is string => typeof l === "string" && l !== training.master_language);
+  if (requestedLanguages?.some((l) => !assignedLanguages.includes(l))) {
+    return response(400, { error: "Angeforderte Sprache ist dem Training nicht zugeordnet" });
   }
-  languages = languages.filter(l => l !== training.master_language);
+  const languages = requestedLanguages ?? assignedLanguages;
   if (!languages.length) {
-    return new Response(JSON.stringify({ error: "Keine Zielsprachen (Marktzuordnung prüfen)" }), { status: 400 });
+    return response(400, { error: "Keine Zielsprachen (Marktzuordnung prüfen)" });
   }
 
   const fields = collectFields(training, training.chapter ?? []);
@@ -196,7 +273,7 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const translated = await translate(f.text, lang, mistralKey);
+        const translated = await translate(f.text, lang, mistralKey, model, glossaryEnabled);
         await supabase.from("translation").upsert({
           ref_type: f.ref_type, ref_id: f.ref_id, field: f.field, language_code: lang,
           text: translated, status: "auto", source_hash: hash, updated_at: new Date().toISOString(),
@@ -222,8 +299,5 @@ Deno.serve(async (req) => {
     summary[lang] = counters;
   }
 
-  return new Response(
-    JSON.stringify({ training: training.title, fields: fields.length, languages: summary }, null, 2),
-    { headers: { "Content-Type": "application/json" } },
-  );
+  return response(200, { training: training.title, fields: fields.length, languages: summary });
 });

@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { AlertCircle, Eye, LogIn, ShieldAlert } from "lucide-react";
 import logo from "../../imports/GroupIT_Logo.png";
 import { KEYCLOAK_MODE, login as keycloakLogin } from "../data/keycloakAuth";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Rahmen (gleiches Layout für Keycloak- und Demo-Anmeldung) ────────────────
 
@@ -88,7 +89,21 @@ function KeycloakSignIn() {
 export function LoginScreen({ onLogin }: { onLogin: () => void }) {
   // Im Keycloak-Modus ersetzt der Absprung die Demo-Anmeldung vollständig.
   if (KEYCLOAK_MODE) return <KeycloakSignIn />;
-  return <DemoLogin onLogin={onLogin} />;
+  if (DEMO_MODE) return <DemoLogin onLogin={onLogin} />;
+  return (
+    <LoginFrame>
+      <div role="alert" className="flex items-start gap-3 bg-[#FDEEEC] text-[#B42318] border border-[#B42318]/20 rounded-lg px-4 py-4">
+        <ShieldAlert size={19} className="mt-0.5 shrink-0" aria-hidden />
+        <div>
+          <h1 className="text-[17px] font-semibold mb-1">Anmeldung nicht konfiguriert</h1>
+          <p className="text-[13px] leading-relaxed">
+            Für diesen Build fehlen die SSO-Einstellungen. Der Demo-Zugang ist aus
+            Sicherheitsgründen deaktiviert.
+          </p>
+        </div>
+      </div>
+    </LoginFrame>
+  );
 }
 
 // ─── Demo-Anmeldung (unverändert) ─────────────────────────────────────────────

@@ -42,12 +42,6 @@ export const handler = async (event) => {
   const identity = verified.identity;
 
   // ── 2. app_user spiegeln ──────────────────────────────────────────────────
-  // Fehler hier brechen die Anmeldung NICHT ab (Vertrag), werden aber über
-  // `provisioned: false` sichtbar gemacht.
-  let provisioned = false;
-  let subject = identity.sub;
-  let provisioningCode = null;
-
   const upsert = await upsertAppUser({
     issuer: "keycloak",
     tenant: identity.tenant,
@@ -56,30 +50,27 @@ export const handler = async (event) => {
     email: identity.email,
   });
 
-  if (upsert.ok) {
-    // In der Plattform deaktivierte Konten dürfen kein Zugriffstoken erhalten.
-    // Ohne diese Prüfung wäre die Aktiv/Inaktiv-Umschaltung der Verwaltung
-    // wirkungslos: Keycloak kennt das Flag nicht und stellt weiter Tokens aus.
-    // Der Zugriff endet damit spätestens mit dem Ablauf des aktuellen Tokens
-    // (15 Minuten); für sofortiges Sperren zusätzlich in Keycloak deaktivieren.
-    if (upsert.active === false) {
-      return json(403, {
-        code: "ACCOUNT_DISABLED",
-        message: "Dieses Konto ist deaktiviert. Bitte wenden Sie sich an Ihre Administration.",
-      });
-    }
-    provisioned = true;
-    // `sub` MUSS die app_user-UUID sein: die RLS-Policies vergleichen
-    // `auth.uid()` mit `app_user.id`.
-    subject = upsert.id;
-  } else {
-    provisioningCode = upsert.code;
-    // Rückfallebene: die Keycloak-UUID. Damit ist die Anmeldung möglich,
-    // RLS-Abfragen auf app_user.id treffen aber (bewusst) keine Zeile –
-    // der Benutzer sieht keine personalisierten Daten, statt versehentlich
-    // die Daten eines fremden Kontos zu sehen.
-    console.warn("[auth-exchange] app_user-Provisionierung fehlgeschlagen:", provisioningCode);
+  if (!upsert.ok) {
+    // Fail closed: Die RLS-Schreibregeln prüfen teils nur Rollenclaims.
+    // Ein Token mit Keycloak-sub statt app_user.id wäre deshalb keineswegs
+    // überall "leer", sondern könnte trotz fehlendem Profil Inhalte ändern.
+    console.error("[auth-exchange] app_user-Provisionierung fehlgeschlagen:", upsert.code);
+    return json(503, {
+      code: "PROVISIONING_FAILED",
+      message: "Das Benutzerprofil konnte nicht bereitgestellt werden. Bitte später erneut versuchen.",
+    });
   }
+
+  // In der Plattform deaktivierte Konten dürfen kein Zugriffstoken erhalten.
+  if (upsert.active === false) {
+    return json(403, {
+      code: "ACCOUNT_DISABLED",
+      message: "Dieses Konto ist deaktiviert. Bitte wenden Sie sich an Ihre Administration.",
+    });
+  }
+  // `sub` MUSS die app_user-UUID sein: die RLS-Policies vergleichen
+  // `auth.uid()` mit `app_user.id`.
+  const subject = upsert.id;
 
   // ── 3. Supabase-Token signieren ───────────────────────────────────────────
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -123,12 +114,6 @@ export const handler = async (event) => {
       markets: identity.markets,
       tenant: identity.tenant,
     },
-    provisioned,
-    ...(provisioned
-      ? {}
-      : {
-          message:
-            "Anmeldung erfolgreich, aber das Benutzerprofil konnte nicht mit der Datenbank abgeglichen werden.",
-        }),
+    provisioned: true,
   });
 };

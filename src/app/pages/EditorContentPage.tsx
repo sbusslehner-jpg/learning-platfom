@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import {
-  AlertTriangle, BookMarked, CheckCircle2, ChevronLeft, Download, Eye,
+  AlertTriangle, Archive, BookMarked, CheckCircle2, ChevronLeft, Download, Eye,
   FileText, GripVertical, Link as LinkIcon, MoreVertical, Pencil, Play,
   Plus, Send, Trash2, X,
 } from "lucide-react";
@@ -10,11 +10,12 @@ import { ProgressBar } from "../components/ProgressBar";
 import { StatusBadge } from "../components/StatusBadge";
 import { ELEMENTS, type NavHandler } from "../data/demo";
 import {
-  createChapter, createElement, deleteChapter, deleteElement,
-  fetchEditorTraining, fetchMarkets, fetchTrainingMarketIds, publishTraining,
+  archiveTraining, createChapter, createElement, deleteChapter, deleteElement,
+  fetchAppSettings, fetchEditorTraining, fetchMarkets, fetchTrainingMarketIds, publishTraining,
   triggerTranslation, updateChapterTitle, updateElementPayload, updateTrainingMeta,
   type EditorElement, type EditorTraining, type MarketOption,
 } from "../data/api";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Editor: Content Editor ───────────────────────────────────────────────────
 // Bearbeitet ein echtes Training (Kapitel, Elemente, Märkte) über Supabase.
@@ -296,6 +297,14 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
 
   const doPublish = async () => {
     if (!trainingId) return;
+    const contentComplete =
+      !!training?.title.trim() &&
+      !!training?.chapters.length &&
+      training.chapters.every(c => c.elements.length > 0);
+    if (!contentComplete || selectedMarketIds.length === 0) {
+      toast.error("Titel, befüllte Kapitel und mindestens ein Markt sind erforderlich.");
+      return;
+    }
     setPublishing(true);
     const ok = await publishTraining(trainingId, selectedMarketIds);
     setPublishing(false);
@@ -304,13 +313,27 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
     setTraining(t => (t ? { ...t, status: "published" } : t));
     setSavedAt(new Date());
     setShowPublish(false);
-    // Übersetzungslauf anstoßen – blockiert die Veröffentlichung nicht.
-    triggerTranslation(trainingId)
+    // Übersetzungslauf nur bei aktivierter Automatik anstoßen.
+    fetchAppSettings()
+      .then(settings => {
+        if (settings?.["translation.auto_on_publish"] === false) return null;
+        return triggerTranslation(trainingId);
+      })
       .then(res => {
+        if (!res) return;
         if (res.ok) toast.success(res.message);
         else toast.info("Übersetzungslauf konnte nicht gestartet werden – Worker ggf. nicht deployt.");
       })
       .catch(() => toast.info("Übersetzungslauf konnte nicht gestartet werden – Worker ggf. nicht deployt."));
+  };
+
+  const doArchive = async () => {
+    if (!trainingId || !window.confirm("Dieses Training archivieren? Lernende können es danach nicht mehr öffnen.")) return;
+    const ok = await archiveTraining(trainingId);
+    if (!ok) { toast.error("Archivieren fehlgeschlagen"); return; }
+    setTraining(t => (t ? { ...t, status: "archived" } : t));
+    setSavedAt(new Date());
+    toast.success("Training archiviert");
   };
 
   // ─── Kein Training gewählt ─────────────────────────────────────────────────
@@ -347,7 +370,18 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
 
   // ─── Demo-Ansicht (Supabase nicht verbunden oder Datensatz fehlt) ──────────
   if (!training) {
-    return <DemoEditor onNavigate={onNavigate} />;
+    if (DEMO_MODE) return <DemoEditor onNavigate={onNavigate} />;
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#F6F8FA] p-6">
+        <div role="alert" className="bg-white rounded-xl border border-[#B42318]/30 max-w-md p-6 text-center">
+          <h1 className="text-[18px] font-semibold text-[#232830] mb-2">Training nicht verfügbar</h1>
+          <p className="text-[14px] text-[#5A6472] mb-4">Der Datensatz konnte nicht geladen werden oder Sie haben keinen Zugriff.</p>
+          <button onClick={() => onNavigate("editor-tree")} className="px-4 py-2 rounded-lg bg-[#00C8C1] font-semibold">
+            Zur Inhaltsstruktur
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // ─── Echter Editor ─────────────────────────────────────────────────────────
@@ -389,6 +423,12 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
           <button className="px-4 py-2 rounded-lg border border-[#C3C9D1] text-[13px] font-medium text-[#3A424E] hover:bg-[#EEF1F4] transition-colors flex items-center gap-1.5">
             <Eye size={14} /> Vorschau
           </button>
+          {training.status === "published" && (
+            <button onClick={doArchive}
+              className="px-4 py-2 rounded-lg border border-[#C3C9D1] text-[13px] font-medium text-[#3A424E] hover:bg-[#EEF1F4] transition-colors flex items-center gap-1.5">
+              <Archive size={14} /> Archivieren
+            </button>
+          )}
           <button onClick={openPublish}
             className="px-4 py-2 rounded-lg font-semibold text-[13px] transition-all flex items-center gap-1.5"
             style={{ backgroundColor: "#00C8C1", color: "#232830" }}>
@@ -548,9 +588,14 @@ export function EditorContent({ onNavigate }: { onNavigate: NavHandler }) {
               )}
             </div>
             <div className="px-6 py-4 border-t border-[#E1E5EA]">
-              <button onClick={doPublish} disabled={publishing}
+              <button onClick={doPublish}
+                disabled={publishing || selectedMarketIds.length === 0 || checklist.slice(0, 2).some(item => !item.ok)}
                 className="w-full h-11 rounded-lg font-semibold text-[15px] flex items-center justify-center gap-2 transition-all"
-                style={{ backgroundColor: publishing ? "#00B3AC" : "#00C8C1", color: "#232830" }}>
+                style={{
+                  backgroundColor: publishing ? "#00B3AC" : "#00C8C1",
+                  color: "#232830",
+                  opacity: selectedMarketIds.length === 0 || checklist.slice(0, 2).some(item => !item.ok) ? 0.5 : 1,
+                }}>
                 {publishing ? <><span className="w-4 h-4 border-2 border-[#232830]/30 border-t-[#232830] rounded-full animate-spin" /> Wird veröffentlicht …</> : "Jetzt veröffentlichen"}
               </button>
             </div>

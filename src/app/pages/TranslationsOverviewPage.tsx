@@ -11,6 +11,7 @@ import {
   type TrainingHealth,
 } from "../data/api";
 import type { NavHandler } from "../data/demo";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Translations Overview ────────────────────────────────────────────────────
 // Aggregat je Training × Sprache aus Supabase. Ist Supabase nicht konfiguriert
@@ -45,7 +46,7 @@ const FALLBACK_OVERVIEW: TrainingHealth[] = [
 const langNeedsWork = (l: LangHealth) => l.outdated > 0 || l.errors > 0 || l.missing > 0;
 
 export function TranslationsOverview({ onNavigate }: { onNavigate: NavHandler }) {
-  const overview = useSupabaseData(fetchTranslationOverview, FALLBACK_OVERVIEW);
+  const overview = useSupabaseData(fetchTranslationOverview, FALLBACK_OVERVIEW, [], DEMO_MODE);
   const [onlyUrgent, setOnlyUrgent] = useState(false);
 
   // Untertitel immer aus den vollständigen Daten berechnen.

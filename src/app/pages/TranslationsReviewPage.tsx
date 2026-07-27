@@ -13,6 +13,7 @@ import {
   type ReviewField,
 } from "../data/api";
 import { REVIEW_FIELDS, STATUS, type NavHandler, type Status } from "../data/demo";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Translation Review ───────────────────────────────────────────────────────
 // Liest trainingId + Sprache aus der Route und lädt die Prüfdaten aus Supabase.
@@ -106,7 +107,18 @@ export function TranslationReview({ onNavigate }: { onNavigate: NavHandler }) {
   if (data) {
     return <LiveReview data={data} lang={lang} trainingId={trainingId} onNavigate={onNavigate} />;
   }
-  return <DemoReview onNavigate={onNavigate} />;
+  if (DEMO_MODE) return <DemoReview onNavigate={onNavigate} />;
+  return (
+    <div className="flex-1 flex items-center justify-center p-6">
+      <div role="alert" className="bg-white rounded-xl border border-[#B42318]/30 max-w-md p-6 text-center">
+        <h1 className="text-[18px] font-semibold text-[#232830] mb-2">Übersetzung nicht verfügbar</h1>
+        <p className="text-[14px] text-[#5A6472] mb-4">Die Daten konnten nicht geladen werden oder sind nicht freigegeben.</p>
+        <button onClick={() => onNavigate("translations-overview")} className="px-4 py-2 rounded-lg bg-[#00C8C1] font-semibold">
+          Zur Übersicht
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ─── Live-Ansicht (Supabase) ──────────────────────────────────────────────────

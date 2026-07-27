@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { EmptyState } from "../components/EmptyState";
 import { useT } from "../i18n";
+import { DEMO_MODE } from "../data/runtime";
 import {
   createMarket, deleteMarket, fetchAdminMarkets, fetchLanguages,
   updateMarketLanguages, updateMarketName,
@@ -62,8 +63,8 @@ export function AdminMarkets() {
       setMarkets(rows);
       setDemo(false);
     } else {
-      setMarkets(DEMO_MARKETS);
-      setDemo(true);
+      setMarkets(DEMO_MODE ? DEMO_MARKETS : []);
+      setDemo(DEMO_MODE);
     }
     setLoading(false);
   }, []);

@@ -50,7 +50,7 @@ cd auth && cp .env.example .env && docker compose up -d
 ```
 
 Der Realm `serviceq` wird automatisch importiert – mit Rollen, Clients, SMTP und einem
-**Administrator-Konto**. Zugangsdaten, Einladungs-Ablauf und Produktionshärtung:
+ein durch das Setup mit Zufallskennwort erzeugtes **Administrator-Konto**. Zugangsdaten, Einladungs-Ablauf und Produktionshärtung:
 [docs/keycloak-setup.md](docs/keycloak-setup.md) · Architekturvertrag: [auth/README.md](auth/README.md)
 
 Administratoren laden neue Benutzer direkt in der Oberfläche ein
@@ -78,17 +78,22 @@ und ein Selbsttest in einem Lauf – Details in
 - **Eigene Domain:** Netlify → Domain management → Add a domain → DNS-Eintrag (CNAME auf die Netlify-Subdomain) setzen; HTTPS-Zertifikat stellt Netlify automatisch aus.
 - **Übersetzungs-Worker deployen:** siehe [docs/uebersetzung-worker.md](docs/uebersetzung-worker.md) (Mistral-Key als Supabase-Secret).
 - **Impressum & Datenschutz:** Die Platzhalter unter `/impressum` und `/datenschutz` durch juristisch geprüfte Texte ersetzen.
-- **Berechtigungen produktiv schalten:** `supabase/migrations/0005_production_rls.sql` und `supabase/migrations/0006_fix_app_user_upsert.sql` einspielen (nimmt die Demo-Schreibrechte zurück bzw. repariert das Anlegen des Benutzerprofils) und die Kontrollabfragen ausführen – siehe [docs/keycloak-setup.md](docs/keycloak-setup.md), Abschnitt 6.
+- **Datenbank produktiv migrieren:** alle Migrationen bis einschließlich
+  `supabase/migrations/0008_go_live_workflows.sql` in Staging und Produktion
+  einspielen und die Rollen-/RLS-Matrix abnehmen – siehe
+  [finales Go-live-Review](docs/go-live-review-2026-07-27.md).
 - **Produktions-SMTP** einrichten – in der Plattform unter **Verwaltung → Einstellungen → E-Mail (SMTP)**,
   inklusive Verbindungstest. Dazu SPF/DKIM/DMARC für die Absenderdomain setzen, sonst landen Einladungen im Spam.
-- **Noch offen:** serverseitiger Lernfortschritt, Datei-Uploads, Monitoring – Details in [docs/produktionsreife.md](docs/produktionsreife.md).
+- **Noch offen:** Datei-/Medienpipeline, Benutzer-/Gruppenzuweisung,
+  produktionsweite Backups/Monitoring und weitere Blocker – verbindlicher Stand
+  im [finalen Go-live-Review](docs/go-live-review-2026-07-27.md).
 
 ## Tests
 
 ```bash
 npm run test:unit       # 30 Unit-Tests der SSO-Kernlogik
-npm run test:functions  # 47 Tests der Auth-Funktionen (Mock-Keycloak)
-npm run test:e2e        # 50 End-to-End-Prüfungen im Browser (Demo-Modus)
+npm run test:functions  # 51 Tests der Serverfunktionen (Mock-Keycloak/-Supabase)
+npm run test:e2e        # 52 End-to-End-Prüfungen im Browser (Demo-Modus)
 npm run test:keycloak   # 10 Prüfungen des OIDC-Absprungs (Keycloak-Modus)
 npm test                # alle vier
 ```
@@ -100,6 +105,7 @@ Lernfortschritt, Fehlerseiten, Responsive, Barrierefreiheit). Einzelne Phasen:
 
 ## Dokumentation
 
+- **[Finales Go-live-Review 2026-07-27](docs/go-live-review-2026-07-27.md) – verbindliche NO-GO-Bewertung, Befunde und Checkliste**
 - **[Inbetriebnahme](docs/inbetriebnahme.md) – Schritt-für-Schritt von der Demo zur echten Anmeldung**
 - [Keycloak auf Hetzner](docs/hetzner-keycloak.md) – eigener Server per Setup-Skript, Zugriff über VS Code Remote-SSH
 - **[Produktionsreife](docs/produktionsreife.md) – Stand nach der Keycloak-Anbindung, Testergebnisse, verbleibende Schritte**

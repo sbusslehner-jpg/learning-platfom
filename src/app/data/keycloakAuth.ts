@@ -39,7 +39,7 @@ const EXCHANGE_ENDPOINT = "/api/auth/exchange";
 /** Merker: der Benutzer hat sich bewusst abgemeldet (siehe App.tsx). */
 const SIGNED_OUT_KEY = "sq-kc-signed-out";
 
-export type AuthState = "loading" | "authenticated" | "unauthenticated";
+export type AuthState = "loading" | "authenticated" | "unauthenticated" | "error";
 
 export type KeycloakProfile = {
   name: string;
@@ -303,7 +303,7 @@ function readExpiry(value: unknown): number | null {
 }
 
 /** Keycloak-Token → Supabase-Token (auth/README.md, Schritt 5). */
-async function exchangeForSupabase(keycloakToken: string): Promise<void> {
+async function exchangeForSupabase(keycloakToken: string): Promise<boolean> {
   try {
     const res = await fetch(EXCHANGE_ENDPOINT, {
       method: "POST",
@@ -312,19 +312,19 @@ async function exchangeForSupabase(keycloakToken: string): Promise<void> {
     if (!res.ok) {
       // Kein Token protokollieren – nur der Statuscode ist diagnostisch nützlich.
       console.warn(`[auth] Tokenaustausch fehlgeschlagen (HTTP ${res.status}).`);
-      return;
+      return false;
     }
     const body = (await res.json()) as { token?: string; expiresAt?: unknown };
     if (!body?.token) {
       console.warn("[auth] Tokenaustausch ohne Token in der Antwort.");
-      return;
+      return false;
     }
     supabaseTokenExpiresAt = readExpiry(body.expiresAt);
     await applySupabaseSession(body.token);
+    return true;
   } catch {
-    // Netzwerkfehler oder Function nicht bereitgestellt: die Oberfläche bleibt
-    // nutzbar, Datenabfragen laufen dann mit dem anon-Key bzw. Demo-Fallback.
     console.warn("[auth] Tokenaustausch nicht erreichbar.");
+    return false;
   }
 }
 
@@ -337,13 +337,18 @@ async function adoptUser(user: User | null): Promise<void> {
     publish("unauthenticated", null);
     return;
   }
-  publish("authenticated", profileFromToken(user));
+  const nextProfile = profileFromToken(user);
   // Nach Anmeldung UND nach jeder stillen Erneuerung neu austauschen,
   // damit das Supabase-Token nicht vor dem Keycloak-Token verfällt.
   if (user.access_token !== lastExchangedToken) {
     lastExchangedToken = user.access_token;
-    await exchangeForSupabase(user.access_token);
+    const exchanged = await exchangeForSupabase(user.access_token);
+    if (!exchanged) {
+      publish("error", null);
+      return;
+    }
   }
+  publish("authenticated", nextProfile);
 }
 
 let bootstrapped = false;

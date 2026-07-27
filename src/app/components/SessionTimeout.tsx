@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { KEYCLOAK_MODE, logout as keycloakLogout } from "../data/keycloakAuth";
 
 // ============================================================
 // Session-Timeout-Modal (§7.5) — Referenzkomponente
@@ -13,6 +14,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const SESSION_BASE = import.meta.env.VITE_ACADEMY_SESSION_URL as string | undefined;
 const POLL_MS = 30_000;
+const KEYCLOAK_IDLE_MS = 30 * 60_000;
+const KEYCLOAK_WARNING_MS = 5 * 60_000;
 
 type Status = {
   authenticated: boolean;
@@ -61,6 +64,7 @@ export function SessionTimeout() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const keycloakLastActivity = useRef(Date.now());
   const t = T[lang()];
 
   const poll = useCallback(async () => {
@@ -86,6 +90,36 @@ export function SessionTimeout() {
     return () => clearInterval(id);
   }, [poll]);
 
+  // Keycloak erneuert Tokens automatisch. Ohne einen separaten
+  // Inaktivitätswächter könnte dieser technische Refresh die Realm-Sitzung
+  // unbegrenzt am Leben halten, obwohl der Benutzer den Tab nicht verwendet.
+  useEffect(() => {
+    if (SESSION_BASE || !KEYCLOAK_MODE) return;
+    let lastRecorded = 0;
+    const activity = () => {
+      const now = Date.now();
+      if (now - lastRecorded < 1000) return;
+      lastRecorded = now;
+      keycloakLastActivity.current = now;
+      setWarnUntil(null);
+    };
+    const events: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "scroll", "touchstart"];
+    events.forEach(event => window.addEventListener(event, activity, { passive: true }));
+    const timer = window.setInterval(() => {
+      const expiresAt = keycloakLastActivity.current + KEYCLOAK_IDLE_MS;
+      const remainingMs = expiresAt - Date.now();
+      if (remainingMs <= 0) {
+        void keycloakLogout();
+      } else if (remainingMs <= KEYCLOAK_WARNING_MS) {
+        setWarnUntil(expiresAt);
+      }
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+      events.forEach(event => window.removeEventListener(event, activity));
+    };
+  }, []);
+
   // Sekunden-Countdown während der Warnphase
   useEffect(() => {
     if (warnUntil == null) return;
@@ -103,6 +137,11 @@ export function SessionTimeout() {
   useEffect(() => { if (warnUntil != null) dialogRef.current?.focus(); }, [warnUntil]);
 
   const extend = async () => {
+    if (!SESSION_BASE && KEYCLOAK_MODE) {
+      keycloakLastActivity.current = Date.now();
+      setWarnUntil(null);
+      return;
+    }
     setBusy(true); setError(false);
     try {
       const res = await api("extend", "POST");
@@ -114,10 +153,14 @@ export function SessionTimeout() {
   };
 
   const logout = async () => {
+    if (!SESSION_BASE && KEYCLOAK_MODE) {
+      await keycloakLogout();
+      return;
+    }
     try { await api("logout", "POST"); } finally { window.location.assign("/sso/expired"); }
   };
 
-  if (!SESSION_BASE || warnUntil == null) return null;
+  if ((!SESSION_BASE && !KEYCLOAK_MODE) || warnUntil == null) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">

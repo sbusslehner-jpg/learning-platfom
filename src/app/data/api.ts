@@ -1,19 +1,26 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { updateKeycloakUser } from "./adminUserApi";
+import { KEYCLOAK_MODE } from "./keycloakAuth";
 
 // ─── Datenschicht ─────────────────────────────────────────────────────────────
 // Lädt Inhalte aus Supabase (nur veröffentlichte Trainings, RLS-gesichert).
-// Ist Supabase nicht konfiguriert oder ein Aufruf schlägt fehl, behalten die
-// Seiten ihre eingebauten Demo-Daten – die Oberfläche bricht nie.
+// Eingebaute Beispieldaten dürfen ausschließlich im expliziten Demo-Build
+// verwendet werden; Produktionsseiten zeigen andernfalls einen Leer-/Fehlerzustand.
 
 export type CatalogModule = { name: string; code: string; count: number; done: number };
 export type TrainingCard = { title: string; duration: string; progress: number; isNew: boolean };
 export type DashboardTraining = { title: string; module: string; progress: number; status: string };
 export type FreshTraining = { title: string; module: string; duration: string; isNew: boolean };
 
-/** Hook: liefert `fallback`, bis der Fetcher echte Daten geliefert hat. */
-export function useSupabaseData<T>(fetcher: () => Promise<T | null>, fallback: T): T {
-  const [data, setData] = useState<T>(fallback);
+/** Hook: Demo-Daten werden nur im expliziten Demo-Build verwendet. */
+export function useSupabaseData<T>(
+  fetcher: () => Promise<T | null>,
+  demoFallback: T,
+  productionFallback: T,
+  demoMode: boolean,
+): T {
+  const [data, setData] = useState<T>(demoMode ? demoFallback : productionFallback);
   useEffect(() => {
     if (!supabase) return;
     let alive = true;
@@ -44,31 +51,44 @@ export async function fetchCatalogModules(): Promise<CatalogModule[] | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("module")
-    .select("slug, title, sort, training(id)")
+    .select("slug, title, sort, training(id, chapter(id, progress(completed)))")
     .order("sort");
   if (error || !data?.length) return null;
-  return data.map((m: any) => ({
-    name: m.title,
-    code: moduleCode(m.slug),
-    count: m.training?.length ?? 0,
-    done: 0, // Lernfortschritt folgt mit der Auth-Ausbaustufe
-  }));
+  return data.map((m: any) => {
+    const trainings = m.training ?? [];
+    const done = trainings.filter((training: any) => {
+      const chapters = training.chapter ?? [];
+      return chapters.length > 0 && chapters.every((chapter: any) =>
+        (chapter.progress ?? []).some((row: any) => row.completed === true));
+    }).length;
+    return {
+      name: m.title,
+      code: moduleCode(m.slug),
+      count: trainings.length,
+      done,
+    };
+  });
 }
 
 export async function fetchModuleTrainings(moduleSlug: string): Promise<TrainingCard[] | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("training")
-    .select("title, published_at, chapter(id), module!inner(slug)")
+    .select("title, published_at, chapter(id, progress(completed)), module!inner(slug)")
     .eq("module.slug", moduleSlug)
     .eq("status", "published");
   if (error || !data?.length) return null;
-  return data.map((t: any) => ({
-    title: t.title,
-    duration: estimateDuration(t.chapter?.length ?? 1),
-    progress: 0,
-    isNew: isNewTraining(t.published_at),
-  }));
+  return data.map((t: any) => {
+    const chapters = t.chapter ?? [];
+    const completed = chapters.filter((chapter: any) =>
+      (chapter.progress ?? []).some((row: any) => row.completed === true)).length;
+    return {
+      title: t.title,
+      duration: estimateDuration(chapters.length || 1),
+      progress: chapters.length ? Math.round((completed / chapters.length) * 100) : 0,
+      isNew: isNewTraining(t.published_at),
+    };
+  });
 }
 
 // ─── Lernansicht ──────────────────────────────────────────────────────────────
@@ -132,18 +152,24 @@ export async function fetchDashboardLists(): Promise<{
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("training")
-    .select("title, published_at, chapter(id), module!inner(slug)")
+    .select("title, published_at, chapter(id, progress(completed)), module!inner(slug)")
     .eq("status", "published")
     .order("published_at", { ascending: false });
   if (error || !data?.length) return null;
   const rows = data as any[];
   return {
-    mine: rows.map(t => ({
-      title: t.title,
-      module: moduleCode(t.module.slug),
-      progress: 0,
-      status: "offen",
-    })),
+    mine: rows.map(t => {
+      const chapters = t.chapter ?? [];
+      const completed = chapters.filter((chapter: any) =>
+        (chapter.progress ?? []).some((row: any) => row.completed === true)).length;
+      const progress = chapters.length ? Math.round((completed / chapters.length) * 100) : 0;
+      return {
+        title: t.title,
+        module: moduleCode(t.module.slug),
+        progress,
+        status: progress === 100 ? "abgeschlossen" : progress > 0 ? "begonnen" : "offen",
+      };
+    }),
     fresh: rows.slice(0, 2).map(t => ({
       title: t.title,
       module: moduleCode(t.module.slug),
@@ -154,10 +180,10 @@ export async function fetchDashboardLists(): Promise<{
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// REDAKTION – Lese- und Schreibfunktionen (Demo: anon-Schreibzugriff, s. 0002)
+// REDAKTION – Lese- und Schreibfunktionen
 // ════════════════════════════════════════════════════════════════════════════
 
-export type UiStatus = "draft" | "published" | "outdated" | "missing" | "auto" | "corrected" | "error";
+export type UiStatus = "draft" | "published" | "archived" | "outdated" | "missing" | "auto" | "corrected" | "error";
 
 // DB-Status ⇄ UI-Status (die Automatik nennt korrigierte Felder "edited")
 const dbToUiTranslationStatus = (s: string): UiStatus =>
@@ -348,17 +374,37 @@ export async function fetchTrainingMarketIds(trainingId: string): Promise<string
 
 export async function publishTraining(trainingId: string, marketIds: string[]): Promise<boolean> {
   if (!supabase) return false;
-  const { error: uErr } = await supabase.from("training")
-    .update({ status: "published", published_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+  if (marketIds.length === 0) return false;
+  const { data, error } = await supabase.rpc("publish_training", {
+    p_training_id: trainingId,
+    p_market_ids: [...new Set(marketIds)],
+  });
+  return !error && data === true;
+}
+
+export async function archiveTraining(trainingId: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("training")
+    .update({ status: "archived", published_at: null, updated_at: new Date().toISOString() })
     .eq("id", trainingId);
-  if (uErr) return false;
-  await supabase.from("training_market").delete().eq("training_id", trainingId);
-  if (marketIds.length) {
-    const rows = marketIds.map(market_id => ({ training_id: trainingId, market_id }));
-    const { error: iErr } = await supabase.from("training_market").insert(rows);
-    if (iErr) return false;
-  }
-  return true;
+  return !error;
+}
+
+export async function fetchCompletedChapterIds(chapterIds: string[]): Promise<string[] | null> {
+  if (!supabase || chapterIds.length === 0) return null;
+  const { data, error } = await supabase
+    .from("progress")
+    .select("chapter_id")
+    .eq("completed", true)
+    .in("chapter_id", chapterIds);
+  if (error || !data) return null;
+  return (data as any[]).map((row) => row.chapter_id);
+}
+
+export async function completeChapter(chapterId: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase.rpc("complete_chapter", { p_chapter_id: chapterId });
+  return !error && data === true;
 }
 
 /** Stößt den Mistral-Worker an (Edge Function). Erfordert deployten Worker. */
@@ -531,7 +577,6 @@ export async function fetchTrainingLanguages(trainingId: string): Promise<{ code
 
 // ════════════════════════════════════════════════════════════════════════════
 // VERWALTUNG – Benutzer, Märkte, Sprachen, Einstellungen
-// (Demo: anon-Schreibzugriff über 0004; produktiv auf Admin-Rolle einschränken)
 // ════════════════════════════════════════════════════════════════════════════
 
 export type AdminUser = {
@@ -543,13 +588,14 @@ export type AdminUser = {
   marketIds: string[];
   active: boolean;
   lastActive: string | null;
+  externalId: string | null;
 };
 
 export async function fetchUsers(): Promise<AdminUser[] | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("app_user")
-    .select("id, name, email, active, last_active_at, user_role_assignment(role), user_market(market_id, market(code))")
+    .select("id, subject, name, email, active, last_active_at, user_role_assignment(role), user_market(market_id, market(code))")
     .order("name");
   if (error || !data) return null;
   return (data as any[]).map(u => ({
@@ -561,6 +607,7 @@ export async function fetchUsers(): Promise<AdminUser[] | null> {
     marketIds: (u.user_market ?? []).map((m: any) => m.market_id),
     active: u.active !== false,
     lastActive: u.last_active_at,
+    externalId: u.subject ?? null,
   }));
 }
 
@@ -582,14 +629,18 @@ export async function createUser(input: {
   return { ok: true };
 }
 
-export async function setUserActive(userId: string, active: boolean): Promise<boolean> {
+export async function setUserActive(userId: string, active: boolean, externalId?: string | null): Promise<boolean> {
   if (!supabase) return false;
+  if (KEYCLOAK_MODE && !externalId) return false;
+  if (externalId && !(await updateKeycloakUser({ operation: "active", userId: externalId, active }))) return false;
   const { error } = await supabase.from("app_user").update({ active }).eq("id", userId);
   return !error;
 }
 
-export async function setUserRoles(userId: string, roles: string[]): Promise<boolean> {
+export async function setUserRoles(userId: string, roles: string[], externalId?: string | null): Promise<boolean> {
   if (!supabase) return false;
+  if (KEYCLOAK_MODE && !externalId) return false;
+  if (externalId && !(await updateKeycloakUser({ operation: "roles", userId: externalId, roles }))) return false;
   await supabase.from("user_role_assignment").delete().eq("user_id", userId);
   if (!roles.length) return true;
   const { error } = await supabase.from("user_role_assignment")
@@ -597,8 +648,12 @@ export async function setUserRoles(userId: string, roles: string[]): Promise<boo
   return !error;
 }
 
-export async function setUserMarkets(userId: string, marketIds: string[]): Promise<boolean> {
+export async function setUserMarkets(
+  userId: string, marketIds: string[], marketCodes: string[], externalId?: string | null,
+): Promise<boolean> {
   if (!supabase) return false;
+  if (KEYCLOAK_MODE && !externalId) return false;
+  if (externalId && !(await updateKeycloakUser({ operation: "markets", userId: externalId, markets: marketCodes }))) return false;
   await supabase.from("user_market").delete().eq("user_id", userId);
   if (!marketIds.length) return true;
   const { error } = await supabase.from("user_market")
@@ -606,8 +661,10 @@ export async function setUserMarkets(userId: string, marketIds: string[]): Promi
   return !error;
 }
 
-export async function deleteUser(userId: string): Promise<boolean> {
+export async function deleteUser(userId: string, externalId?: string | null): Promise<boolean> {
   if (!supabase) return false;
+  if (KEYCLOAK_MODE && !externalId) return false;
+  if (externalId && !(await updateKeycloakUser({ operation: "delete", userId: externalId }))) return false;
   const { error } = await supabase.from("app_user").delete().eq("id", userId);
   return !error;
 }
@@ -739,14 +796,14 @@ export async function fetchTranslationHealth(): Promise<TranslationHealthRow[] |
 
 export async function fetchMarketCoverage(): Promise<MarketCoverageRow[] | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("report_market_coverage").select("*");
+  const { data, error } = await supabase.rpc("report_market_coverage_secure");
   if (error || !data) return null;
   return data as any[];
 }
 
 export async function fetchLearningActivity(): Promise<ActivityRow | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase.from("report_learning_activity").select("*").maybeSingle();
+  const { data, error } = await supabase.rpc("report_learning_activity_secure").maybeSingle();
   if (error || !data) return null;
   return data as any;
 }

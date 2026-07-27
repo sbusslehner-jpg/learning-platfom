@@ -6,6 +6,7 @@ import { ProgressRing } from "../components/ProgressRing";
 import { StatusBadge } from "../components/StatusBadge";
 import type { Screen } from "../data/demo";
 import { fetchModuleTrainings, useSupabaseData } from "../data/api";
+import { DEMO_MODE } from "../data/runtime";
 import { useT } from "../i18n";
 
 // ─── Training Overview ────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ const FALLBACK_TRAININGS = [
 type FilterId = "all" | "started" | "new";
 
 export function TrainingOverview({ onNavigate }: { onNavigate: (s: Screen) => void }) {
-  const trainings = useSupabaseData(() => fetchModuleTrainings("dsr"), FALLBACK_TRAININGS);
+  const trainings = useSupabaseData(() => fetchModuleTrainings("dsr"), FALLBACK_TRAININGS, [], DEMO_MODE);
   const { t } = useT();
   const [filter, setFilter] = useState<FilterId>("all");
 

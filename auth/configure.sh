@@ -161,9 +161,11 @@ if generated:
     #    waere ab dem Import oeffentlich bekannt.
     admin_email = os.environ.get("PLATFORM_ADMIN_EMAIL", "").strip().lower()
     admin_password = os.environ.get("PLATFORM_ADMIN_PASSWORD", "")
+    admin_found = False
     for user in data.get("users", []):
         if "admin" not in (user.get("realmRoles") or []):
             continue
+        admin_found = True
         if admin_email:
             user["username"] = admin_email
             user["email"] = admin_email
@@ -173,6 +175,31 @@ if generated:
                 {"type": "password", "value": admin_password, "temporary": True}
             ]
             notes.append("Startpasswort eingetragen")
+    if not admin_found:
+        if not admin_email or not admin_password:
+            raise SystemExit(
+                "Fehler: PLATFORM_ADMIN_EMAIL und PLATFORM_ADMIN_PASSWORD "
+                "sind fuer den Produktionsrealm erforderlich."
+            )
+        data.setdefault("users", []).insert(0, {
+            "username": admin_email,
+            "email": admin_email,
+            "firstName": "Plattform",
+            "lastName": "Administrator",
+            "enabled": True,
+            "emailVerified": True,
+            "attributes": {
+                "markets": ["DE,AT,CH,FR,PL,IT,ES,NL,CZ,SE"],
+                "tenant": ["PHS_AT"],
+                "locale": ["de"],
+            },
+            "credentials": [
+                {"type": "password", "value": admin_password, "temporary": True}
+            ],
+            "requiredActions": ["UPDATE_PASSWORD"],
+            "realmRoles": ["admin", "editor", "user"],
+        })
+        notes.append(f"Administrator erzeugt: {admin_email}")
 
 # SMTP nur anfassen, wenn ein echter Host vorgegeben wurde
 smtp_host = os.environ.get("SMTP_HOST", "").strip()

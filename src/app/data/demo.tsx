@@ -13,7 +13,7 @@ export type Screen =
   | "translations-overview" | "translations-review"
   | "admin-users" | "admin-markets" | "admin-settings" | "reporting";
 
-export type Status = "draft" | "published" | "outdated" | "missing" | "auto" | "corrected" | "error";
+export type Status = "draft" | "published" | "archived" | "outdated" | "missing" | "auto" | "corrected" | "error";
 
 /** Navigations-Handler mit optionalem Pfad-Parameter (z. B. Trainings-ID). */
 export type NavHandler = (s: Screen, param?: string) => void;
@@ -23,6 +23,7 @@ export type NavHandler = (s: Screen, param?: string) => void;
 export const STATUS: Record<Status, { label: string; icon: React.ReactNode; bg: string; color: string }> = {
   draft:     { label: "Entwurf",       icon: <PencilLine  size={12} />, bg: "#EEF1F4", color: "#5A6472" },
   published: { label: "Veröffentlicht",icon: <CheckCircle2 size={12} />, bg: "#EAF8F0", color: "#15803D" },
+  archived:  { label: "Archiviert",     icon: <History      size={12} />, bg: "#EEF1F4", color: "#5A6472" },
   outdated:  { label: "Veraltet",      icon: <History      size={12} />, bg: "#FDF3E4", color: "#B45309" },
   missing:   { label: "Fehlend",       icon: <CircleDashed size={12} />, bg: "#EEF1F4", color: "#5A6472" },
   auto:      { label: "Automatisch",   icon: <Sparkles     size={12} />, bg: "#EBF1FE", color: "#1D5BD6" },

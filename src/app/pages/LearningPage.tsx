@@ -9,10 +9,12 @@ import { ProgressBar } from "../components/ProgressBar";
 import { ProgressRing } from "../components/ProgressRing";
 import { type Screen } from "../data/demo";
 import {
-  fetchLearningTraining, fetchTranslationMap,
+  completeChapter, fetchCompletedChapterIds, fetchLearningTraining, fetchTranslationMap,
   type LearningChapter, type LearningElement, type LearningTraining, type TranslationMap,
 } from "../data/api";
+import { DEMO_MODE } from "../data/runtime";
 import { useT } from "../i18n";
+import { safeContentUrl, sanitizeContentHtml } from "../security/content";
 
 // Deep-Link-Ziel: der Consume-Redirect landet auf /lernen/<slug>; ohne Slug
 // wird das Standard-Training geladen ("Weiterlernen"-Einstieg).
@@ -163,7 +165,7 @@ function ElementView({ element, tr }: {
           {/* Inhalte stammen aus der eigenen Redaktion (RLS-gesichert) */}
           <div
             className="text-[17px] text-[#3A424E] leading-[1.75] [&_p]:mb-5 [&_h3]:text-[18px] [&_h3]:font-semibold [&_h3]:text-[#232830] [&_h3]:mb-3 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-5 [&_a]:text-[#007D78] [&_a]:underline"
-            dangerouslySetInnerHTML={{ __html: body.text }}
+            dangerouslySetInnerHTML={{ __html: sanitizeContentHtml(body.text) }}
           />
           {body.original && <OriginalChip />}
         </div>
@@ -212,9 +214,9 @@ function ElementView({ element, tr }: {
     }
     case "document": {
       const label = tr(element.id, "label", p.label ?? "Dokument");
-      const url = typeof p.url === "string" ? p.url.trim() : "";
+      const url = safeContentUrl(p.url);
       const openDocument = () => {
-        if (url) {
+        if (url !== null) {
           window.open(url, "_blank", "noopener,noreferrer");
           return;
         }
@@ -233,8 +235,16 @@ function ElementView({ element, tr }: {
     }
     case "link": {
       const label = tr(element.id, "label", p.label ?? p.url);
+      const url = safeContentUrl(p.url);
+      if (!url) {
+        return (
+          <div className="w-full bg-[#FDF3E4] text-[#B45309] rounded-lg border border-[#B45309]/20 px-4 py-3 mb-6 text-[13px]">
+            Ungültiger oder fehlender Link: {label.text}
+          </div>
+        );
+      }
       return (
-        <a href={p.url} target="_blank" rel="noreferrer"
+        <a href={url} target="_blank" rel="noopener noreferrer"
           className="w-full flex items-center gap-3 bg-white rounded-lg border border-[#C3C9D1] px-4 py-3 mb-6 hover:border-[#00C8C1] hover:shadow-sm transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#00C8C1]">
           <div className="w-10 h-10 rounded-lg bg-[#E6FAF9] flex items-center justify-center shrink-0">
             <ExternalLink size={18} style={{ color: "#009D97" }} aria-hidden />
@@ -318,6 +328,7 @@ function CompletionScreen({ title, chapterCount, elementCount, duration, onBack,
 const progressKey = (trainingId: string) => `sq-progress:${trainingId}`;
 
 function loadProgress(trainingId: string): Set<string> {
+  if (!DEMO_MODE) return new Set();
   try {
     const raw = localStorage.getItem(progressKey(trainingId));
     return new Set(raw ? (JSON.parse(raw) as string[]) : []);
@@ -327,6 +338,7 @@ function loadProgress(trainingId: string): Set<string> {
 }
 
 function saveProgress(trainingId: string, done: Set<string>) {
+  if (!DEMO_MODE) return;
   try {
     localStorage.setItem(progressKey(trainingId), JSON.stringify([...done]));
   } catch {
@@ -339,14 +351,23 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
   const { slug } = useParams();
   const activeSlug = slug ?? DEFAULT_SLUG;
   const [training, setTraining] = useState<LearningTraining>(FALLBACK_TRAINING);
+  const [trainingLoading, setTrainingLoading] = useState(!DEMO_MODE);
+  const [trainingError, setTrainingError] = useState(false);
 
   // Training zum Slug laden (bei Slug-Wechsel neu); Fallback bleibt bis Daten da sind.
   useEffect(() => {
     let alive = true;
     setTraining(FALLBACK_TRAINING);
+    setTrainingLoading(!DEMO_MODE);
+    setTrainingError(false);
     fetchLearningTraining(activeSlug)
-      .then((t) => { if (alive && t) setTraining(t); })
-      .catch(() => {});
+      .then((t) => {
+        if (!alive) return;
+        if (t) setTraining(t);
+        else if (!DEMO_MODE) setTrainingError(true);
+      })
+      .catch(() => { if (alive && !DEMO_MODE) setTrainingError(true); })
+      .finally(() => { if (alive) setTrainingLoading(false); });
     return () => { alive = false; };
   }, [activeSlug]);
 
@@ -361,7 +382,14 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
 
   // Fortschritt und Kapitelindex neu laden, wenn das echte Training eintrifft
   useEffect(() => {
-    setChapterDone(loadProgress(training.id));
+    if (DEMO_MODE || !training.fromDb) {
+      setChapterDone(loadProgress(training.id));
+    } else {
+      setChapterDone(new Set());
+      fetchCompletedChapterIds(training.chapters.map(c => c.id))
+        .then(ids => { if (ids) setChapterDone(new Set(ids)); })
+        .catch(() => toast.error("Lernfortschritt konnte nicht geladen werden."));
+    }
     setActiveIdx(0);
   }, [training.id]);
 
@@ -383,6 +411,30 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
     return () => { alive = false; };
   }, [training.id, training.fromDb, lang]);
 
+  if (trainingLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#F6F8FA]" role="status">
+        <span className="w-5 h-5 border-2 border-[#C3C9D1] border-t-[#00C8C1] rounded-full animate-spin mr-2" />
+        Training wird geladen …
+      </div>
+    );
+  }
+  if (trainingError) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#F6F8FA] p-6">
+        <div role="alert" className="max-w-md bg-white border border-[#B42318]/30 rounded-xl p-6 text-center">
+          <h1 className="text-[19px] font-semibold text-[#232830] mb-2">Training nicht verfügbar</h1>
+          <p className="text-[14px] text-[#5A6472] mb-4">
+            Das Training konnte nicht geladen werden oder ist für Ihren Markt nicht freigegeben.
+          </p>
+          <button onClick={() => onNavigate("catalog")} className="px-4 py-2 rounded-lg bg-[#00C8C1] text-[#232830] font-semibold">
+            Zum Katalog
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const chapter = chapters[activeIdx];
   const elementCount = chapters.reduce((n, c) => n + c.elements.length, 0);
   const duration = `${Math.max(10, chapters.length * 12)} Min.`;
@@ -400,7 +452,14 @@ export function LearningView({ onNavigate }: { onNavigate: (s: Screen) => void }
   const trChapter = trField("chapter");
   const trElement = trField("content_element");
 
-  const finishChapter = () => {
+  const finishChapter = async () => {
+    if (!DEMO_MODE && training.fromDb) {
+      const saved = await completeChapter(chapter.id);
+      if (!saved) {
+        toast.error("Fortschritt konnte nicht gespeichert werden. Bitte erneut versuchen.");
+        return;
+      }
+    }
     const updated = new Set(chapterDone).add(chapter.id);
     setChapterDone(updated);
     saveProgress(training.id, updated);

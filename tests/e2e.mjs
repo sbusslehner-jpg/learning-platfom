@@ -69,7 +69,10 @@ async function startServer() {
   }
   if (!process.env.SKIP_BUILD) {
     console.log("Anwendung bauen …");
-    execSync("npx vite build", { stdio: "pipe" });
+    execSync("npx vite build", {
+      stdio: "pipe",
+      env: { ...process.env, VITE_DEMO_MODE: "true" },
+    });
   }
   console.log("Server starten …");
   const proc = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort"],
@@ -252,6 +255,7 @@ async function run() {
       });
 
       await ctx.close();
+
     }
 
     // ═══ B) Editor ═══════════════════════════════════════════════════════════
@@ -525,6 +529,24 @@ async function run() {
       });
 
       await ctx.close();
+
+      const tabletCtx = await browser.newContext({ viewport: { width: 768, height: 1024 }, hasTouch: true });
+      const tablet = await tabletCtx.newPage();
+      watchConsole(tablet);
+      await coldStart(tablet, ["admin", "editor", "user"]);
+      await login(tablet);
+
+      await check("Tablet-Dashboard (768×1024) ohne horizontalen Überlauf", async () => {
+        const tabletOverflow = await tablet.evaluate(() =>
+          document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        assert(tabletOverflow <= 2, `Überlauf ${tabletOverflow}px`);
+      });
+      await check("Tablet-Verwaltung bleibt bedienbar", async () => {
+        await routeTo(tablet, "/verwaltung/benutzer");
+        const body = await tablet.locator("body").innerText();
+        assert(/Benutzer/i.test(body), "Benutzerverwaltung nicht sichtbar");
+      });
+      await tabletCtx.close();
     }
 
     // ═══ H) Barrierefreiheit ═════════════════════════════════════════════════

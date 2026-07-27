@@ -36,26 +36,15 @@ Clients, SMTP-Konfiguration, Theme-Bindung, Administrator-Konto).
 Zwei getrennte Konten – nicht verwechseln:
 
 **a) Realm-Administrator der Lernplattform** (das Konto, mit dem Sie sich in der
-Lernplattform anmelden):
-
-| | |
-|---|---|
-| Anmeldung | `admin@groupit.example` |
-| Startpasswort | `Start-Passwort-2026!` |
-| Rollen | `admin`, `editor`, `user` (alle drei) |
-| Märkte | DE, AT, CH, FR, PL, IT, ES, NL, CZ, SE |
-
-Das Passwort ist als **temporär** hinterlegt: Keycloak verlangt bei der ersten
-Anmeldung eine Änderung.
-
-> ⚠️ **Nur für die Entwicklung.** Diese Zugangsdaten stehen im Repository und
-> sind damit öffentlich bekannt. Im Produktivbetrieb werden sie **nicht**
-> verwendet: Dort erzeugen `hetzner-setup.sh` bzw. `configure.sh` ein Konto mit
-> Ihrer echten E-Mail-Adresse und einem zufälligen Startpasswort – siehe
-> [`inbetriebnahme.md`](inbetriebnahme.md), Schritt 2a.
+Lernplattform anmelden): Die Repository-Vorlage enthält bewusst kein
+vorkonfiguriertes Benutzerkonto. `hetzner-setup.sh` bzw. `configure.sh` erzeugen
+es mit Ihrer echten E-Mail-Adresse und einem zufälligen, temporären
+Startpasswort. Rollen: `admin`, `editor`, `user`; Märkte: DE, AT, CH, FR, PL,
+IT, ES, NL, CZ, SE. Siehe [`inbetriebnahme.md`](inbetriebnahme.md), Schritt 2a.
 
 **b) Keycloak-Instanz-Administrator** (nur für die Keycloak-Konsole selbst):
-`kcadmin` / das Passwort aus `KC_ADMIN_PASSWORD` in Ihrer `.env`.
+Benutzername und Passwort aus `KC_ADMIN`/`KC_ADMIN_PASSWORD` in Ihrer `.env`;
+es gibt keine Repository-Standardwerte.
 
 ## 3. Client-Secret des Backends holen
 

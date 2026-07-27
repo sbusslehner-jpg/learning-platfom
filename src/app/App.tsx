@@ -173,7 +173,9 @@ export default function App() {
         <Route path="/sso/error" element={<SsoErrorPage />} />
         <Route path="*" element={
           KEYCLOAK_MODE
-            ? (signinFailed
+            ? (keycloak.state === "error"
+                ? <Navigate to="/sso/error?reason=error" replace />
+                : signinFailed
                 ? <Navigate to={SCREEN_PATHS["login"]} replace />
                 : <SsoLoading label={keycloak.state === "loading" ? "Sitzung wird geprüft" : "Weiterleitung zur Anmeldung"} />)
             : SSO_MODE

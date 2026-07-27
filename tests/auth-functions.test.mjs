@@ -49,6 +49,8 @@ const mock = {
   smtpServer: { host: "mailpit", port: "1025", from: "noreply@groupit.example", auth: "false" },
   realmUpdateStatus: 204,
   smtpTestStatus: 204,
+  currentRoles: [{ id: "role-id-user", name: "user" }],
+  existingUser: { id: NEW_KEYCLOAK_USER_ID, enabled: true, attributes: { tenant: ["PHS_AT"], markets: ["DE"] } },
 };
 
 function record(entry) {
@@ -117,9 +119,29 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Rollen-Mapping
+    if (method === "GET" && /^\/users\/[^/]+\/role-mappings\/realm$/.test(suffix)) {
+      return sendJson(res, 200, mock.currentRoles);
+    }
+    if (method === "DELETE" && /^\/users\/[^/]+\/role-mappings\/realm$/.test(suffix)) {
+      res.writeHead(204);
+      return res.end();
+    }
     if (method === "POST" && /^\/users\/[^/]+\/role-mappings\/realm$/.test(suffix)) {
       if (mock.roleMappingStatus >= 400) return sendJson(res, mock.roleMappingStatus, { error: "nope" });
       res.writeHead(mock.roleMappingStatus);
+      return res.end();
+    }
+
+    if (method === "GET" && /^\/users\/[^/]+$/.test(suffix)) {
+      return sendJson(res, 200, mock.existingUser);
+    }
+    if (method === "PUT" && /^\/users\/[^/]+$/.test(suffix)) {
+      mock.existingUser = { ...mock.existingUser, ...(body ?? {}) };
+      res.writeHead(204);
+      return res.end();
+    }
+    if (method === "POST" && /^\/users\/[^/]+\/logout$/.test(suffix)) {
+      res.writeHead(204);
       return res.end();
     }
 
@@ -224,6 +246,7 @@ process.env.PLATFORM_URL = "https://lernen.example.com";
 const { handler: exchangeHandler } = await import("../netlify/functions/auth-exchange.mjs");
 const { handler: inviteHandler } = await import("../netlify/functions/admin-invite.mjs");
 const { handler: smtpHandler } = await import("../netlify/functions/admin-smtp.mjs");
+const { handler: adminUserHandler } = await import("../netlify/functions/admin-user.mjs");
 
 after(() => {
   server.closeAllConnections?.();
@@ -242,6 +265,8 @@ beforeEach(() => {
   mock.smtpServer = { host: "mailpit", port: "1025", from: "noreply@groupit.example", auth: "false" };
   mock.realmUpdateStatus = 204;
   mock.smtpTestStatus = 204;
+  mock.currentRoles = [{ id: "role-id-user", name: "user" }];
+  mock.existingUser = { id: NEW_KEYCLOAK_USER_ID, enabled: true, attributes: { tenant: ["PHS_AT"], markets: ["DE"] } };
 });
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -384,21 +409,14 @@ describe("POST /api/auth/exchange", () => {
     assert.ok(ttl >= 880, `TTL ${ttl}s sollte nahe 900s liegen`);
   });
 
-  test("Provisionierungsfehler → 200 mit provisioned:false, Login bleibt möglich", async () => {
+  test("Provisionierungsfehler → 503 ohne Zugriffstoken (fail closed)", async () => {
     mock.supabaseAppUserStatus = 500;
     const token = await mintToken();
     const response = await exchangeHandler(eventFor(token));
-    assert.equal(response.statusCode, 200);
+    assert.equal(response.statusCode, 503);
     const payload = parse(response);
-    assert.equal(payload.provisioned, false);
-    assert.ok(typeof payload.message === "string" && payload.message.length > 0);
-    const { payload: claims } = await jwtVerify(
-      payload.token,
-      new TextEncoder().encode(SUPABASE_JWT_SECRET),
-    );
-    // Rückfallebene: Keycloak-sub, damit RLS-Abfragen gezielt LEER laufen.
-    assert.equal(claims.sub, "kc-sub-0001");
-    assert.equal(claims.keycloak_sub, "kc-sub-0001");
+    assert.equal(payload.code, "PROVISIONING_FAILED");
+    assert.equal(payload.token, undefined);
   });
 
   // ==========================================================================
@@ -892,6 +910,51 @@ test("Austausch: aktives Konto erhält weiterhin ein Token", async () => {
   const res = await exchangeHandler(eventFor(await mintToken({})));
   assert.equal(res.statusCode, 200);
   assert.ok(parse(res).token, "Token fehlt");
+});
+
+describe("POST /api/admin/user", () => {
+  const userEvent = (token, body) => eventFor(token, { path: "/api/admin/user", body });
+
+  test("Lernender darf bestehende Konten nicht ändern", async () => {
+    const response = await adminUserHandler(userEvent(
+      await mintToken({ roles: ["user"] }),
+      { operation: "delete", userId: NEW_KEYCLOAK_USER_ID },
+    ));
+    assert.equal(response.statusCode, 403);
+    assert.equal(callsTo("DELETE", `/users/${NEW_KEYCLOAK_USER_ID}`).length, 0);
+  });
+
+  test("Rollen werden autoritativ in Keycloak ersetzt", async () => {
+    const response = await adminUserHandler(userEvent(
+      await mintToken({ roles: ["admin"] }),
+      { operation: "roles", userId: NEW_KEYCLOAK_USER_ID, roles: ["editor", "user"] },
+    ));
+    assert.equal(response.statusCode, 200);
+    assert.equal(callsTo("GET", `/users/${NEW_KEYCLOAK_USER_ID}/role-mappings/realm`).length, 1);
+    assert.equal(callsTo("DELETE", `/users/${NEW_KEYCLOAK_USER_ID}/role-mappings/realm`).length, 1);
+    const adds = callsTo("POST", `/users/${NEW_KEYCLOAK_USER_ID}/role-mappings/realm`);
+    assert.deepEqual(adds.at(-1).body.map((role) => role.name), ["editor", "user"]);
+  });
+
+  test("Marktänderung erhält andere Keycloak-Attribute", async () => {
+    const response = await adminUserHandler(userEvent(
+      await mintToken({ roles: ["admin"] }),
+      { operation: "markets", userId: NEW_KEYCLOAK_USER_ID, markets: ["AT", "FR"] },
+    ));
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(mock.existingUser.attributes.tenant, ["PHS_AT"]);
+    assert.deepEqual(mock.existingUser.attributes.markets, ["AT,FR"]);
+  });
+
+  test("Deaktivierung beendet bestehende Keycloak-Sitzungen", async () => {
+    const response = await adminUserHandler(userEvent(
+      await mintToken({ roles: ["admin"] }),
+      { operation: "active", userId: NEW_KEYCLOAK_USER_ID, active: false },
+    ));
+    assert.equal(response.statusCode, 200);
+    assert.equal(mock.existingUser.enabled, false);
+    assert.equal(callsTo("POST", `/users/${NEW_KEYCLOAK_USER_ID}/logout`).length, 1);
+  });
 });
 
 // ── Mail-Einstellungen (admin-smtp) ──────────────────────────────────────────

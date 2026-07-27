@@ -10,6 +10,7 @@ import {
   type TreeProduct,
 } from "../data/api";
 import type { NavHandler } from "../data/demo";
+import { DEMO_MODE } from "../data/runtime";
 
 // ─── Editor: Content Tree ─────────────────────────────────────────────────────
 // Lädt den echten Inhaltsbaum (Produkt → Modul → Training) aus Supabase.
@@ -42,7 +43,7 @@ const FALLBACK_TREE: TreeProduct[] = [
 ];
 
 export function EditorTree({ onNavigate }: { onNavigate: NavHandler }) {
-  const tree = useSupabaseData(fetchContentTree, FALLBACK_TREE);
+  const tree = useSupabaseData(fetchContentTree, FALLBACK_TREE, [], DEMO_MODE);
 
   // Vor der ersten Interaktion ist das erste Modul geöffnet; danach entscheidet
   // die Auswahl des Nutzers (null = noch keine Interaktion).

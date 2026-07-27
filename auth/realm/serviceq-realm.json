@@ -184,40 +184,6 @@
   ],
   "users": [
     {
-      "username": "admin@groupit.example",
-      "email": "admin@groupit.example",
-      "firstName": "Plattform",
-      "lastName": "Administrator",
-      "enabled": true,
-      "emailVerified": true,
-      "attributes": {
-        "markets": [
-          "DE,AT,CH,FR,PL,IT,ES,NL,CZ,SE"
-        ],
-        "tenant": [
-          "PHS_AT"
-        ],
-        "locale": [
-          "de"
-        ]
-      },
-      "credentials": [
-        {
-          "type": "password",
-          "value": "Start-Passwort-2026!",
-          "temporary": true
-        }
-      ],
-      "requiredActions": [
-        "UPDATE_PASSWORD"
-      ],
-      "realmRoles": [
-        "admin",
-        "editor",
-        "user"
-      ]
-    },
-    {
       "username": "service-account-platform-backend",
       "enabled": true,
       "serviceAccountClientId": "platform-backend",

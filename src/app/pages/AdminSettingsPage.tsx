@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  AlertTriangle, Bell, Check, CheckCircle2, Download, Info, Lock, Mail, Plus,
-  RefreshCw, Settings, Sparkles, Trash2,
+  AlertTriangle, Bell, Check, CheckCircle2, Info, Lock, Mail, Plus,
+  RefreshCw, Settings, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Breadcrumb } from "../components/Breadcrumb";
@@ -15,8 +15,8 @@ import { UI_LANGUAGES, useT } from "../i18n";
 
 // ─── Admin: Settings ──────────────────────────────────────────────────────────
 // Alle Schalter mit hinterlegtem Schlüssel schreiben sofort in `app_setting`
-// (optimistisch, Rücknahme bei Fehler). Steuerelemente ohne Schlüssel sind als
-// „noch nicht gespeichert" gekennzeichnet – nichts täuscht eine Speicherung vor.
+// (optimistisch, Rücknahme bei Fehler). Nicht angebundene Funktionen werden
+// ausschließlich als Hinweis gezeigt und besitzen keine wirkungslosen Regler.
 // Geheimnisse (Mistral-Key) gehören nicht in `app_setting`, sondern als
 // Supabase-Secret zum Worker (docs/uebersetzung-worker.md).
 
@@ -107,11 +107,6 @@ function SectionHeader({ title, description }: { title: string; description: str
       <p className="text-[13px] text-[#5A6472] mt-0.5">{description}</p>
     </div>
   );
-}
-
-/** Hinweis für Steuerelemente ohne hinterlegten Schlüssel. */
-function NotStored() {
-  return <span className="text-[11px] font-normal text-[#8A93A0] whitespace-nowrap">(noch nicht gespeichert)</span>;
 }
 
 // ─── Mail-Einstellungen (SMTP) ───────────────────────────────────────────────
@@ -295,14 +290,14 @@ function SmtpPanel() {
   );
 }
 
-function Row({ label, desc, notStored = false, children }: {
-  label: string; desc: string; notStored?: boolean; children: React.ReactNode;
+function Row({ label, desc, children }: {
+  label: string; desc: string; children: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 px-6 py-4 flex-wrap">
       <div className="flex-1 min-w-[180px]">
         <div className="text-[14px] font-medium text-[#232830] flex items-center gap-2 flex-wrap">
-          {label}{notStored && <NotStored />}
+          {label}
         </div>
         <div className="text-[12px] text-[#5A6472] mt-0.5">{desc}</div>
       </div>
@@ -323,21 +318,12 @@ export function AdminSettings() {
   const [loading, setLoading] = useState(true);
   const [dbReady, setDbReady] = useState(false);
 
-  // Nur lokal (kein Schlüssel in app_setting)
+  // Nur UI-Zustand
   const [keyPanel, setKeyPanel] = useState(false);
-  const [autosave, setAutosave] = useState("30 Sekunden");
-  const [sessionTimeout, setSessionTimeout] = useState("8 Stunden");
-  const [notifyJobDone, setNotifyJobDone] = useState(true);
-  const [notifyDigest, setNotifyDigest] = useState(false);
-  const [digestFreq, setDigestFreq] = useState("Wöchentlich");
-  const [mfaRequired, setMfaRequired] = useState(false);
-  const [sessionSingle, setSessionSingle] = useState(true);
-  const [glossaryTerms, setGlossaryTerms] = useState([
-    { de: "Serviceannahme", context: "DSR" },
-    { de: "DealerData", context: "System" },
-    { de: "Fahrzeugannahme", context: "DSR" },
-    { de: "Werkstattauftrag", context: "Allgemein" },
-  ]);
+  const glossaryTerms = [
+    "ServiceQ", "DSR", "RPD", "RPC", "CCD", "CCC", "Dealer_Admin",
+    "DealerData", "Online Check-In", "GroupIT", "CDM", "DMS",
+  ];
 
   useEffect(() => {
     let alive = true;
@@ -380,42 +366,11 @@ export function AdminSettings() {
     }
   }
 
-  const auditLog = [
-    { ts: "21.07.2026, 09:14", user: "IT Administration", action: "API-Key rotiert", type: "security" },
-    { ts: "20.07.2026, 16:42", user: "Max Keller", action: "Training veröffentlicht: DSR Konfiguration", type: "content" },
-    { ts: "20.07.2026, 14:11", user: "IT Administration", action: "Markt HU hinzugefügt", type: "admin" },
-    { ts: "19.07.2026, 11:03", user: "Max Keller", action: "Benutzer Anna Kowalski eingeladen", type: "admin" },
-    { ts: "18.07.2026, 09:30", user: "IT Administration", action: "Mistral-Verbindung getestet", type: "security" },
-  ];
-
-  /** Echter Client-Export der angezeigten Protokollzeilen (CSV, Excel-freundlich). */
-  const exportAuditCsv = () => {
-    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-    const header = ["Zeitstempel", "Benutzer", "Aktion", "Kategorie"];
-    const csv = [header, ...auditLog.map(e => [e.ts, e.user, e.action, e.type])]
-      .map(row => row.map(esc).join(";"))
-      .join("\r\n");
-    // BOM, damit Excel UTF-8 (Umlaute) korrekt erkennt
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `aktivitaetsprotokoll-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast.success(`${auditLog.length} Einträge als CSV exportiert`);
-  };
-
-  const activeNotifications = [settings.notifyPublish, settings.notifyError, notifyJobDone, notifyDigest]
-    .filter(Boolean).length;
-
   const NAV: { id: SettingsTab; label: string; icon: React.ElementType; badge?: string }[] = [
     { id: "api",           label: "Mistral AI",         icon: Sparkles, badge: settings.autoOnPublish ? "Auto" : undefined },
     { id: "smtp",          label: "E-Mail (SMTP)",      icon: Mail },
     { id: "platform",      label: "Plattform",          icon: Settings },
-    { id: "notifications", label: "Benachrichtigungen",  icon: Bell,     badge: `${activeNotifications} aktiv` },
+    { id: "notifications", label: "Benachrichtigungen",  icon: Bell },
     { id: "security",      label: "Sicherheit",         icon: Lock },
   ];
 
@@ -494,23 +449,12 @@ export function AdminSettings() {
                   <Lock size={12} />Serverseitig verwaltet
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#EEF1F4]">
-                {[
-                  { label: "Modell", value: settings.model, demo: false },
-                  { label: "Letzte Nutzung", value: "Heute, 09:14", demo: true },
-                  { label: "Übersetzt (30 Tage)", value: "4.820 Felder", demo: true },
-                ].map(s => (
-                  <div key={s.label} className="px-5 py-4">
-                    <div className="text-[11px] font-semibold text-[#8A93A0] uppercase tracking-wide mb-1">{s.label}</div>
-                    <div className="text-[14px] font-semibold text-[#232830] flex items-center gap-2 flex-wrap">
-                      {s.value}
-                      {s.demo && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#EEF1F4] text-[#5A6472]">Demo-Wert</span>}
-                    </div>
-                  </div>
-                ))}
+              <div className="px-5 py-4">
+                <div className="text-[11px] font-semibold text-[#8A93A0] uppercase tracking-wide mb-1">Konfiguriertes Modell</div>
+                <div className="text-[14px] font-semibold text-[#232830]">{settings.model}</div>
               </div>
               <p className="px-5 pb-4 text-[12px] text-[#8A93A0]">
-                Nutzungszahlen liefert der Worker; bis zu seinem Deployment stehen hier Platzhalter.
+                Nutzungs- und Kostenmetriken sind noch nicht angebunden. Es werden bewusst keine Schätz- oder Demo-Werte angezeigt.
               </p>
             </div>
 
@@ -617,36 +561,24 @@ supabase functions deploy translate-training</pre>
                   <table className="w-full text-[13px]">
                     <thead>
                       <tr className="border-b border-[#EEF1F4] bg-[#F6F8FA]">
-                        <th scope="col" className="text-left px-4 py-2.5 text-[11px] font-semibold text-[#8A93A0] uppercase tracking-wide">Begriff (DE)</th>
-                        <th scope="col" className="text-left px-4 py-2.5 text-[11px] font-semibold text-[#8A93A0] uppercase tracking-wide">Kontext</th>
+                        <th scope="col" className="text-left px-4 py-2.5 text-[11px] font-semibold text-[#8A93A0] uppercase tracking-wide">Begriff</th>
                         <th scope="col" className="text-left px-4 py-2.5 text-[11px] font-semibold text-[#8A93A0] uppercase tracking-wide">Verhalten</th>
-                        <th className="w-10" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#EEF1F4]">
-                      {glossaryTerms.map((term, i) => (
-                        <tr key={i} className="hover:bg-[#F6F8FA] transition-colors group">
-                          <td className="px-4 py-3 font-medium text-[#232830]">{term.de}</td>
-                          <td className="px-4 py-3"><span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#EEF1F4] text-[#5A6472]">{term.context}</span></td>
+                      {glossaryTerms.map(term => (
+                        <tr key={term} className="hover:bg-[#F6F8FA] transition-colors">
+                          <td className="px-4 py-3 font-medium text-[#232830]">{term}</td>
                           <td className="px-4 py-3 text-[#5A6472]">Nicht übersetzen</td>
-                          <td className="px-4 py-3">
-                            <button type="button" aria-label={`Begriff ${term.de} entfernen`}
-                              onClick={() => setGlossaryTerms(prev => prev.filter((_, j) => j !== i))}
-                              className={`p-1 rounded text-[#C3C9D1] hover:text-[#B42318] hover:bg-[#FDEEEC] transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ${FOCUS}`}>
-                              <Trash2 size={13} />
-                            </button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <div className="px-4 py-3 border-t border-[#EEF1F4] flex items-center gap-3 flex-wrap">
-                  <button type="button" onClick={() => setGlossaryTerms(prev => [...prev, { de: "Neuer Begriff", context: "Allgemein" }])}
-                    className={`flex items-center gap-1.5 text-[13px] font-medium text-[#007D78] hover:underline rounded ${FOCUS}`}>
-                    <Plus size={14} />Begriff hinzufügen
-                  </button>
-                  <span className="text-[11px] text-[#8A93A0]">Begriffsliste: noch nicht gespeichert</span>
+                <div className="px-4 py-3 border-t border-[#EEF1F4]">
+                  <span className="text-[11px] text-[#8A93A0]">
+                    Die Liste entspricht exakt der serverseitigen Worker-Konfiguration. Änderungen erfordern derzeit ein Deployment.
+                  </span>
                 </div>
               </div>
             </div>
@@ -667,9 +599,8 @@ supabase functions deploy translate-training</pre>
                       persist("masterLanguage", code);
                     }} />
                 </Row>
-                <Row label="Autosave-Intervall" notStored desc="Wie oft Änderungen im Editor automatisch gespeichert werden">
-                  <SettingsSelect label="Autosave-Intervall" value={autosave}
-                    options={["10 Sekunden", "30 Sekunden", "60 Sekunden", "Manuell"]} onChange={setAutosave} />
+                <Row label="Speicherverhalten" desc="Editoränderungen werden feld- oder aktionsbezogen gespeichert; das Intervall ist nicht konfigurierbar">
+                  <span className="text-[13px] font-semibold text-[#3A424E]">Automatisch</span>
                 </Row>
               </div>
             </div>
@@ -715,31 +646,16 @@ supabase functions deploy translate-training</pre>
             <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
               <SectionHeader title="Sitzung &amp; Zugang" description="Einstellungen für Anmeldung und Inaktivitätszeitlimit" />
               <div className="divide-y divide-[#EEF1F4]">
-                <Row label="Sitzungs-Timeout" notStored desc="Automatische Abmeldung nach Inaktivität">
-                  <SettingsSelect label="Sitzungs-Timeout" value={sessionTimeout}
-                    options={["2 Stunden", "4 Stunden", "8 Stunden", "24 Stunden"]} onChange={setSessionTimeout} />
+                <Row label="Sitzungs-Timeout" desc="Automatische Abmeldung nach Inaktivität; zusätzlich gelten die zentralen Keycloak-Limits">
+                  <span className="text-[13px] font-semibold text-[#3A424E]">30 Minuten</span>
                 </Row>
               </div>
             </div>
 
             <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
               <SectionHeader title="Plattform-Info" description="Versionsinformationen und Systemkennzahlen" />
-              <div className="divide-y divide-[#EEF1F4]">
-                {[
-                  { label: "Plattform-Version", value: "2.4.1" },
-                  { label: "Letzte Aktualisierung", value: "18.07.2026" },
-                  { label: "Aktive Märkte", value: "6 von 30" },
-                  { label: "Aktive Benutzer (30 Tage)", value: "142" },
-                  { label: "Gespeicherte Übersetzungsfelder", value: "1.240 in 8 Sprachen" },
-                ].map(row => (
-                  <div key={row.label} className="flex items-center justify-between gap-4 px-6 py-3.5">
-                    <span className="text-[14px] text-[#5A6472]">{row.label}</span>
-                    <span className="text-[14px] font-semibold text-[#232830] tabular-nums">{row.value}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="px-6 py-3 border-t border-[#EEF1F4] text-[12px] text-[#8A93A0]">
-                Demo-Werte. Belastbare Kennzahlen stehen unter Verwaltung → Auswertungen.
+              <p className="px-6 py-4 text-[13px] text-[#5A6472]">
+                Build-Metadaten sind noch nicht an die Laufzeit angebunden. Belastbare Nutzungskennzahlen stehen unter Verwaltung → Auswertungen.
               </p>
             </div>
           </>}
@@ -747,43 +663,13 @@ supabase functions deploy translate-training</pre>
           {/* ── Benachrichtigungen ── */}
           {activeTab === "notifications" && <>
             <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
-              <SectionHeader title="E-Mail-Benachrichtigungen" description="Wann werden Administratoren und Editoren automatisch informiert" />
-              <div className="divide-y divide-[#EEF1F4]">
-                <Row label="Training veröffentlicht" desc="Nach jedem erfolgreichen Veröffentlichungsvorgang">
-                  <SettingsToggle label="Benachrichtigung: Training veröffentlicht" disabled={loading}
-                    enabled={settings.notifyPublish} onChange={v => persist("notifyPublish", v)} />
-                </Row>
-                <Row label="Übersetzungsjob abgeschlossen" notStored desc="Wenn alle Felder eines Laufs übersetzt wurden">
-                  <SettingsToggle label="Benachrichtigung: Übersetzungsjob abgeschlossen"
-                    enabled={notifyJobDone} onChange={setNotifyJobDone} />
-                </Row>
-                <Row label="Übersetzungsfehler" desc="Sofortige Meldung bei fehlgeschlagenen Feldern">
-                  <SettingsToggle label="Benachrichtigung: Übersetzungsfehler" disabled={loading}
-                    enabled={settings.notifyError} onChange={v => persist("notifyError", v)} />
-                </Row>
-              </div>
-              <p className="px-6 py-3 border-t border-[#EEF1F4] text-[12px] text-[#8A93A0]">
-                Gekennzeichnete Schalter werden sofort gespeichert – es gibt keinen separaten Speichern-Schritt.
-              </p>
-            </div>
-
-            <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
-              <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-[#EEF1F4] flex-wrap">
-                <div>
-                  <h2 className="text-[15px] font-semibold text-[#232830] flex items-center gap-2 flex-wrap">
-                    Zusammenfassungs-Digest <NotStored />
-                  </h2>
-                  <p className="text-[13px] text-[#5A6472] mt-0.5">Periodische E-Mail mit allen Aktivitäten der Plattform</p>
-                </div>
-                <SettingsToggle label="Zusammenfassungs-Digest" enabled={notifyDigest} onChange={setNotifyDigest} />
-              </div>
-              <div className={`px-6 py-4 flex items-center justify-between gap-4 flex-wrap ${!notifyDigest ? "opacity-40 pointer-events-none" : ""}`}>
-                <div>
-                  <div className="text-[14px] font-medium text-[#232830]">Häufigkeit</div>
-                  <div className="text-[12px] text-[#5A6472] mt-0.5">Wird montags um 08:00 Uhr versendet</div>
-                </div>
-                <SettingsSelect label="Digest-Häufigkeit" value={digestFreq}
-                  options={["Täglich", "Wöchentlich", "Monatlich"]} onChange={setDigestFreq} />
+              <SectionHeader title="E-Mail-Benachrichtigungen" description="Automatisierte Plattformmeldungen" />
+              <div className="flex items-start gap-2.5 px-6 py-4 bg-[#FDF3E4]">
+                <AlertTriangle size={16} className="text-[#B45309] shrink-0 mt-0.5" />
+                <p className="text-[13px] text-[#B45309] leading-snug">
+                  Der Versand-Worker für Veröffentlichungs-, Übersetzungs- und Digest-Meldungen ist noch nicht implementiert.
+                  Die SMTP-Konfiguration wird derzeit ausschließlich für Keycloak-Einladungs- und Kontomails verwendet.
+                </p>
               </div>
             </div>
           </>}
@@ -791,51 +677,18 @@ supabase functions deploy translate-training</pre>
           {/* ── Sicherheit ── */}
           {activeTab === "security" && <>
             <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
-              <SectionHeader title="Anmeldesicherheit" description="Einstellungen zur Absicherung aller Benutzerkonten" />
-              <div className="divide-y divide-[#EEF1F4]">
-                <Row label="Zwei-Faktor-Authentifizierung (MFA)" notStored
-                  desc="Wird zentral im Identity-Provider (SSO) durchgesetzt, nicht in dieser Oberfläche">
-                  <SettingsToggle label="Zwei-Faktor-Authentifizierung erzwingen"
-                    enabled={mfaRequired} onChange={setMfaRequired} />
-                </Row>
-                <Row label="Einzelne aktive Sitzung" notStored
-                  desc="Alte Sitzungen werden bei Neuanmeldung automatisch beendet">
-                  <SettingsToggle label="Nur eine aktive Sitzung erlauben"
-                    enabled={sessionSingle} onChange={setSessionSingle} />
-                </Row>
-              </div>
+              <SectionHeader title="Anmeldesicherheit" description="Wird verbindlich im Identity-Provider konfiguriert" />
+              <p className="px-6 py-4 text-[13px] text-[#5A6472]">
+                MFA, Passwortregeln, Brute-Force-Schutz und Sitzungsrichtlinien werden ausschließlich im Keycloak-Realm verwaltet.
+                Diese Oberfläche zeigt dafür bewusst keine wirkungslosen Schalter.
+              </p>
             </div>
 
             <div className="bg-white rounded-xl border border-[#C3C9D1] overflow-hidden shadow-sm">
-              <SectionHeader title="Aktivitätsprotokoll" description="Sicherheitsrelevante Ereignisse der letzten 30 Tage" />
-              <div className="divide-y divide-[#EEF1F4]">
-                {auditLog.map((entry, i) => {
-                  const typeColor: Record<string, { dot: string; bg: string; label: string }> = {
-                    security: { dot: "#B42318", bg: "#FDEEEC", label: "Sicherheit" },
-                    content:  { dot: "#15803D", bg: "#EAF8F0", label: "Inhalt" },
-                    admin:    { dot: "#1D5BD6", bg: "#EBF1FE", label: "Verwaltung" },
-                  };
-                  const style = typeColor[entry.type] ?? { dot: "#8A93A0", bg: "#EEF1F4", label: entry.type };
-                  return (
-                    <div key={i} className="flex items-center gap-4 px-6 py-3 hover:bg-[#F6F8FA] transition-colors">
-                      <div className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center" style={{ backgroundColor: style.bg }}>
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: style.dot }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-[#232830] truncate">{entry.action}</div>
-                        <div className="text-[11px] text-[#8A93A0] mt-0.5">{entry.user} · {style.label}</div>
-                      </div>
-                      <div className="text-[12px] text-[#8A93A0] tabular-nums shrink-0">{entry.ts}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="px-6 py-3 border-t border-[#EEF1F4]">
-                <button type="button" onClick={exportAuditCsv}
-                  className={`flex items-center gap-1.5 text-[13px] font-medium text-[#007D78] hover:underline rounded ${FOCUS}`}>
-                  <Download size={14} />Angezeigte Einträge exportieren (CSV)
-                </button>
-              </div>
+              <SectionHeader title="Aktivitätsprotokoll" description="Sicherheitsrelevante Ereignisse" />
+              <p className="px-6 py-4 text-[13px] text-[#5A6472]">
+                Ein zentrales, manipulationsgeschütztes Audit-Log ist noch nicht angebunden. Es werden keine erfundenen Ereignisse angezeigt.
+              </p>
             </div>
 
             <div className="rounded-xl border border-[#B42318]/25 overflow-hidden">
@@ -848,16 +701,6 @@ supabase functions deploy translate-training</pre>
                   Diese Aktionen sind unwiderruflich und betreffen alle aktiven Benutzer. Sie erfordern serverseitige
                   Admin-Rechte und sind in dieser Oberfläche noch nicht angebunden.
                 </p>
-                <div className="flex gap-3 flex-wrap">
-                  <button type="button" onClick={() => toast("Noch nicht angebunden – erfordert die Admin-API des Servers.")}
-                    className={`px-4 py-2 rounded-lg border border-[#B42318] text-[13px] font-semibold text-[#B42318] hover:bg-[#B42318] hover:text-white transition-all ${FOCUS}`}>
-                    Alle Sitzungen beenden
-                  </button>
-                  <button type="button" onClick={() => toast("Noch nicht angebunden – erfordert die Admin-API des Servers.")}
-                    className={`px-4 py-2 rounded-lg border border-[#C3C9D1] text-[13px] font-medium text-[#5A6472] hover:bg-[#EEF1F4] transition-colors ${FOCUS}`}>
-                    Plattform-Cache leeren
-                  </button>
-                </div>
               </div>
             </div>
           </>}
